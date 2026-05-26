@@ -2,6 +2,8 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getQRCode, updateQRCode, deleteQRCode, generateQRImage, generateQRSVG } from '$lib/server/qr';
 import { buildShortUrl } from '$lib/server/urls';
+import { assertSafeTargetUrl } from '$lib/server/url-safety';
+import { getCampaign } from '$lib/server/campaigns';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
   if (!locals.user) {
@@ -29,6 +31,14 @@ export const PATCH: RequestHandler = async ({ params, request, locals, url }) =>
   }
   
   const body = await request.json();
+  if (typeof body.target_url === 'string') {
+    await assertSafeTargetUrl(body.target_url);
+  }
+  if (body.campaign_id) {
+    const campaignId = Number(body.campaign_id);
+    if (!getCampaign(campaignId, locals.user.id)) throw error(400, 'Campaign not found');
+    body.campaign_id = campaignId;
+  }
   updateQRCode(params.short_code, body);
   
   const updated = getQRCode(params.short_code);

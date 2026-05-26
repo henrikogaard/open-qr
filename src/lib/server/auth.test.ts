@@ -9,6 +9,11 @@ function createUser(email: string): number {
 
 describe('auth module', () => {
   beforeEach(() => {
+    db.prepare('DELETE FROM scan_logs').run();
+    db.prepare('DELETE FROM abuse_reports').run();
+    db.prepare('DELETE FROM qr_codes').run();
+    db.prepare('DELETE FROM campaigns').run();
+    db.prepare('DELETE FROM api_keys').run();
     db.prepare('DELETE FROM sessions').run();
     db.prepare('DELETE FROM otp_codes').run();
     db.prepare('DELETE FROM users').run();

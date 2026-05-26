@@ -1,9 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createQRCode, listQRCodes, generateQRImage, generateQRSVG } from '$lib/server/qr';
-import { isAllowedScheme, isBlacklisted } from '$lib/server/blacklist';
 import { getBooleanSetting } from '$lib/server/settings';
 import { buildShortUrl } from '$lib/server/urls';
+import { assertSafeTargetUrl } from '$lib/server/url-safety';
+import { assertCanUseCustomSlug } from '$lib/server/custom-slugs';
+import { getCampaign } from '$lib/server/campaigns';
 
 export const GET: RequestHandler = async ({ locals }) => {
   if (!locals.user) {
@@ -23,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
   }
 
   const body = await request.json();
-  const { targetUrl, style, shortCode, expiresAt, password } = body;
+  const { targetUrl, style, shortCode, expiresAt, password, campaignId } = body;
 
   if (!targetUrl) {
     throw error(400, 'Target URL is required');
@@ -35,10 +37,7 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
       // immediate feedback for unsupported schemes / blacklisted hosts. The
       // QR itself encodes the short URL, but a preview is only useful when
       // the underlying target would actually be persistable.
-      const scheme = isAllowedScheme(targetUrl);
-      if (!scheme.allowed) throw error(400, scheme.reason!);
-      const blacklist = isBlacklisted(targetUrl);
-      if (blacklist.blocked) throw error(400, `URL blocked: ${blacklist.reason}`);
+      await assertSafeTargetUrl(targetUrl, { threatIntel: false });
 
       // QR encodes the short URL so scans route through /go/<code>; for the
       // preview we use a same-length placeholder code so the module density
@@ -49,13 +48,22 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
       return json({ success: true, data: { dataUrl, svg } });
     }
 
+    await assertSafeTargetUrl(targetUrl);
+    const normalizedShortCode = shortCode
+      ? assertCanUseCustomSlug(String(shortCode), locals.user)
+      : undefined;
+    const normalizedCampaignId = campaignId ? Number(campaignId) : undefined;
+    if (normalizedCampaignId && (!locals.user || !getCampaign(normalizedCampaignId, locals.user.id))) {
+      throw error(400, 'Campaign not found');
+    }
     const result = createQRCode(
       targetUrl,
       locals.user?.id || null,
       style,
-      shortCode,
+      normalizedShortCode,
       expiresAt,
-      password
+      password,
+      normalizedCampaignId
     );
 
     const shortUrl = buildShortUrl(result.shortCode, url.origin);

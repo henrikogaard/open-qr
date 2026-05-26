@@ -1,5 +1,6 @@
 import { db } from '$lib/db';
 import { getBooleanSetting } from './settings';
+import { isIP } from 'node:net';
 
 /**
  * URI schemes we let users encode into a QR code. Restricting to this set
@@ -78,8 +79,7 @@ function checkSuspicious(url: string, parsed: URL): { blocked: boolean; reason?:
     return { blocked: true, reason: 'URL shorteners are not allowed' };
   }
   
-  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  if (ipRegex.test(parsed.hostname)) {
+  if (isIP(parsed.hostname) !== 0) {
     return { blocked: true, reason: 'IP-based URLs are not allowed' };
   }
   

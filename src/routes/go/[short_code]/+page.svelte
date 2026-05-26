@@ -9,6 +9,20 @@
 </script>
 
 <main class="min-h-screen bg-bg flex items-center justify-center px-4 py-12">
+  {#if data.interstitial}
+  <section class="w-full max-w-lg card p-8">
+    <div class="mb-6">
+      <p class="eyebrow">Leaving Open-QR</p>
+      <h1 class="mt-2 text-2xl font-semibold text-fg">Continue to destination?</h1>
+      <p class="mt-2 text-sm text-fg-muted">This QR code points to:</p>
+      <p class="mt-3 break-all rounded-md border border-border bg-bg-soft px-3 py-2 font-mono text-sm text-fg">{data.targetHost}</p>
+    </div>
+    <div class="flex flex-col gap-2 sm:flex-row">
+      <a href={data.continueHref} class="btn-primary flex-1 justify-center">Continue</a>
+      <a href={`/report/${data.shortCode}`} class="btn-secondary flex-1 justify-center">Report QR</a>
+    </div>
+  </section>
+  {:else}
   <section class="w-full max-w-sm card p-8">
     <div class="mb-6 flex items-center gap-3">
       <span class="grid h-10 w-10 place-items-center rounded-md bg-accent/15 text-accent">
@@ -45,4 +59,5 @@
       <button type="submit" class="btn-primary w-full">Continue</button>
     </form>
   </section>
+  {/if}
 </main>

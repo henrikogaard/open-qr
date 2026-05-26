@@ -1,4 +1,5 @@
 <script>
+  // @ts-nocheck
   import QRPreview from './QRPreview.svelte';
   import { onDestroy, onMount } from 'svelte';
 
@@ -6,6 +7,7 @@
   export let user = null;
   /** Current required Terms version (from layout data). */
   export let termsVersion = '';
+  export let featureFlags = {};
 
   let targetUrl = '';
   let template = 'default';
@@ -19,6 +21,10 @@
   let errorCorrection = 'M';
   let expiresAt = '';
   let password = '';
+  let customSlug = '';
+  let campaignId = '';
+  let campaigns = [];
+  let newCampaignName = '';
 
   let previewUrl = '';
   let shortUrl = '';
@@ -52,6 +58,7 @@
       termsAccepted = user?.termsAcceptedVersion === termsVersion;
       loadPresets();
       loadRecentQrs();
+      loadCampaigns();
     } else if (termsVersion) {
       try {
         termsAccepted = localStorage.getItem(TERMS_LOCAL_KEY) === termsVersion;
@@ -89,6 +96,30 @@
       const j = await r.json();
       if (j.success) recentQrs = j.data.slice(0, 25);
     } catch {/* ignore */}
+  }
+
+  async function loadCampaigns() {
+    try {
+      const r = await fetch('/api/v1/campaigns');
+      const j = await r.json();
+      if (j.success) campaigns = j.data;
+    } catch {/* ignore */}
+  }
+
+  async function createCampaign() {
+    const name = newCampaignName.trim();
+    if (!name) return;
+    const r = await fetch('/api/v1/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const j = await r.json();
+    if (j.success) {
+      campaigns = [j.data, ...campaigns];
+      campaignId = String(j.data.id);
+      newCampaignName = '';
+    }
   }
 
   /** @param {{ template: string; foregroundColor?: string; backgroundColor?: string; borderSize?: string; borderStyle?: string; centerType?: string; centerText?: string|null; centerTextColor?: string; errorCorrection?: string; foreground_color?: string; background_color?: string; border_size?: string; border_style?: string; center_type?: string; center_text?: string|null; center_text_color?: string; error_correction?: string }} src */
@@ -273,6 +304,8 @@
         body: JSON.stringify({
           targetUrl: url,
           style: buildStyle(),
+          shortCode: customSlug || undefined,
+          campaignId: campaignId || undefined,
           expiresAt: expiresAt || undefined,
           password: password || undefined
         })
@@ -371,6 +404,34 @@
           class="input"
         />
       </div>
+
+      {#if featureFlags.customSlugsEnabled && (!featureFlags.customSlugsAdminOnly || user?.isAdmin)}
+        <div>
+          <label for="custom-slug" class="field-label">Custom slug <span class="text-fg-dim font-normal">(optional)</span></label>
+          <div class="flex overflow-hidden rounded-md border border-border-strong bg-surface focus-within:ring-2 focus-within:ring-accent/30">
+            <span class="grid place-items-center border-r border-border px-3 font-mono text-xs text-fg-dim">/go/</span>
+            <input id="custom-slug" type="text" bind:value={customSlug} placeholder="summer-sale" class="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none" />
+          </div>
+        </div>
+      {/if}
+
+      {#if isAuthed}
+        <div class="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div>
+            <label for="campaign" class="field-label">Campaign <span class="text-fg-dim font-normal">(optional)</span></label>
+            <select id="campaign" bind:value={campaignId} class="select">
+              <option value="">No campaign</option>
+              {#each campaigns as campaign}
+                <option value={campaign.id}>{campaign.name}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <input type="text" bind:value={newCampaignName} placeholder="New campaign" class="input min-w-0" />
+            <button type="button" on:click={createCampaign} disabled={!newCampaignName.trim()} class="btn-secondary shrink-0">Add</button>
+          </div>
+        </div>
+      {/if}
 
       <div class="grid gap-4 sm:grid-cols-2">
         <div>

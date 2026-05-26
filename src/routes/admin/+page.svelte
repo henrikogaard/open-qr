@@ -10,6 +10,7 @@
   let blacklist = { enabled: true, suspiciousEnabled: true, patterns: [] };
   let settings = {};
   let analytics = {};
+  let reports = [];
   let newPattern = '';
   let isRegex = false;
   
@@ -22,7 +23,8 @@
       loadQRs(),
       loadBlacklist(),
       loadSettings(),
-      loadAnalytics()
+      loadAnalytics(),
+      loadReports()
     ]);
   }
   
@@ -48,6 +50,12 @@
     const response = await fetch('/api/v1/admin/analytics');
     const result = await response.json();
     if (result.success) analytics = result.data;
+  }
+
+  async function loadReports() {
+    const response = await fetch('/api/v1/admin/reports');
+    const result = await response.json();
+    if (result.success) reports = result.data;
   }
   
   async function addPattern() {
@@ -97,6 +105,20 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [key]: value })
     });
+    settings = { ...settings, [key]: value };
+  }
+
+  async function toggleSetting(key, checked) {
+    await updateSetting(key, checked ? 'true' : 'false');
+  }
+
+  async function updateReportStatus(id, status) {
+    await fetch('/api/v1/admin/reports', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status })
+    });
+    await loadReports();
   }
 </script>
 
@@ -110,7 +132,7 @@
   </header>
 
   <div class="mb-8 flex gap-1 border-b border-border overflow-x-auto">
-    {#each [{v:'qrs',l:'QR codes'},{v:'blacklist',l:'Blacklist'},{v:'settings',l:'Settings'},{v:'analytics',l:'Analytics'}] as t}
+    {#each [{v:'qrs',l:'QR codes'},{v:'blacklist',l:'Blacklist'},{v:'reports',l:'Reports'},{v:'settings',l:'Settings'},{v:'privacy',l:'Privacy'},{v:'analytics',l:'Analytics'}] as t}
       <button
         type="button"
         on:click={() => (activeTab = t.v)}
@@ -209,7 +231,11 @@
     </div>
 
   {:else if activeTab === 'settings'}
-    <div class="card max-w-2xl p-6 sm:p-8 space-y-5">
+    <div class="grid gap-6 lg:grid-cols-2">
+    <div class="card p-6 sm:p-8 space-y-5">
+      <div>
+        <p class="eyebrow mb-3">App</p>
+      </div>
       <div>
         <label for="brand-name" class="field-label">Brand name</label>
         <input id="brand-name" type="text" value={settings.BRAND_NAME || ''} on:blur={(e) => updateSetting('BRAND_NAME', e.target.value)} class="input" />
@@ -233,6 +259,151 @@
           <option value="false">Disabled</option>
         </select>
       </div>
+      <label class="flex items-center gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_CUSTOM_SLUGS === 'true'} on:change={(e) => toggleSetting('ENABLE_CUSTOM_SLUGS', e.target.checked)} class="checkbox" />
+        <span>Enable custom slugs</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.CUSTOM_SLUGS_ADMIN_ONLY !== 'false'} on:change={(e) => toggleSetting('CUSTOM_SLUGS_ADMIN_ONLY', e.target.checked)} class="checkbox" />
+        <span>Limit custom slugs to admins</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_DESTINATION_INTERSTITIAL === 'true'} on:change={(e) => toggleSetting('ENABLE_DESTINATION_INTERSTITIAL', e.target.checked)} class="checkbox" />
+        <span>Show destination interstitial before redirects</span>
+      </label>
+    </div>
+
+    <div class="card p-6 sm:p-8 space-y-5">
+      <div>
+        <p class="eyebrow mb-3">Threat intelligence</p>
+      </div>
+      <label class="flex items-start gap-3 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_THREAT_INTEL === 'true'} on:change={(e) => toggleSetting('ENABLE_THREAT_INTEL', e.target.checked)} class="checkbox mt-0.5" />
+        <span>
+          <span class="block font-medium">Enable external URL checks</span>
+          <span class="mt-1 block text-xs text-fg-dim">Runs after local blacklist checks. Provider outages fail open unless fail closed is enabled.</span>
+        </span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.THREAT_INTEL_FAIL_CLOSED === 'true'} on:change={(e) => toggleSetting('THREAT_INTEL_FAIL_CLOSED', e.target.checked)} class="checkbox" />
+        <span>Fail closed when a provider errors</span>
+      </label>
+
+      <div class="border-t border-border pt-5 space-y-4">
+        <label class="flex items-center gap-2 text-sm text-fg">
+          <input type="checkbox" checked={settings.ENABLE_WEB_RISK === 'true'} on:change={(e) => toggleSetting('ENABLE_WEB_RISK', e.target.checked)} class="checkbox" />
+          <span>Google Web Risk</span>
+        </label>
+        <input id="web-risk-key" type="password" value={settings.WEB_RISK_API_KEY || ''} placeholder="Google Web Risk API key" on:blur={(e) => updateSetting('WEB_RISK_API_KEY', e.target.value)} class="input" autocomplete="off" />
+      </div>
+
+      <div class="border-t border-border pt-5 space-y-4">
+        <label class="flex items-center gap-2 text-sm text-fg">
+          <input type="checkbox" checked={settings.ENABLE_URLHAUS === 'true'} on:change={(e) => toggleSetting('ENABLE_URLHAUS', e.target.checked)} class="checkbox" />
+          <span>URLhaus</span>
+        </label>
+        <input id="urlhaus-key" type="password" value={settings.URLHAUS_AUTH_KEY || ''} placeholder="Optional URLhaus Auth-Key" on:blur={(e) => updateSetting('URLHAUS_AUTH_KEY', e.target.value)} class="input" autocomplete="off" />
+      </div>
+
+      <div class="border-t border-border pt-5 space-y-4">
+        <label class="flex items-center gap-2 text-sm text-fg">
+          <input type="checkbox" checked={settings.ENABLE_PHISHTANK === 'true'} on:change={(e) => toggleSetting('ENABLE_PHISHTANK', e.target.checked)} class="checkbox" />
+          <span>PhishTank</span>
+        </label>
+        <input id="phishtank-key" type="password" value={settings.PHISHTANK_APP_KEY || ''} placeholder="Optional PhishTank app key" on:blur={(e) => updateSetting('PHISHTANK_APP_KEY', e.target.value)} class="input" autocomplete="off" />
+      </div>
+
+      <div class="border-t border-border pt-5 space-y-4">
+        <label class="flex items-center gap-2 text-sm text-fg">
+          <input type="checkbox" checked={settings.ENABLE_SPAMHAUS_DBL === 'true'} on:change={(e) => toggleSetting('ENABLE_SPAMHAUS_DBL', e.target.checked)} class="checkbox" />
+          <span>Spamhaus DBL</span>
+        </label>
+        <input id="spamhaus-zone" type="text" value={settings.SPAMHAUS_DBL_ZONE || 'dbl.spamhaus.org'} placeholder="dbl.spamhaus.org" on:blur={(e) => updateSetting('SPAMHAUS_DBL_ZONE', e.target.value)} class="input" />
+      </div>
+    </div>
+
+    <div class="card p-6 sm:p-8 space-y-5 lg:col-span-2">
+      <div>
+        <p class="eyebrow mb-3">Plausible analytics</p>
+      </div>
+      <label class="flex items-start gap-3 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_PLAUSIBLE === 'true'} on:change={(e) => toggleSetting('ENABLE_PLAUSIBLE', e.target.checked)} class="checkbox mt-0.5" />
+        <span>
+          <span class="block font-medium">Enable Plausible script</span>
+          <span class="mt-1 block text-xs text-fg-dim">Adds the Plausible browser script to public and app pages. Update your privacy notice before enabling on production.</span>
+        </span>
+      </label>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label for="plausible-domain" class="field-label">Plausible domain</label>
+          <input id="plausible-domain" type="text" value={settings.PLAUSIBLE_DOMAIN || ''} placeholder="qr.example.com" on:blur={(e) => updateSetting('PLAUSIBLE_DOMAIN', e.target.value)} class="input" />
+        </div>
+        <div>
+          <label for="plausible-script" class="field-label">Script URL</label>
+          <input id="plausible-script" type="url" value={settings.PLAUSIBLE_SCRIPT_SRC || 'https://plausible.io/js/script.js'} on:blur={(e) => updateSetting('PLAUSIBLE_SCRIPT_SRC', e.target.value)} class="input" />
+        </div>
+      </div>
+    </div>
+    </div>
+
+  {:else if activeTab === 'reports'}
+    <div class="card-flush overflow-hidden">
+      <table class="table">
+        <thead>
+          <tr><th>QR</th><th>Reason</th><th>Status</th><th>Details</th><th class="text-right">Action</th></tr>
+        </thead>
+        <tbody>
+          {#each reports as report}
+            <tr>
+              <td>
+                <a href={`/go/${report.short_code}`} class="font-mono text-xs text-fg hover:underline">/go/{report.short_code}</a>
+                {#if report.target_url}<p class="max-w-xs truncate text-xs text-fg-dim">{report.target_url}</p>{/if}
+              </td>
+              <td class="text-fg">{report.reason}</td>
+              <td><span class="badge badge-neutral">{report.status}</span></td>
+              <td class="max-w-sm text-sm text-fg-muted">{report.details || '—'}</td>
+              <td class="text-right">
+                <select value={report.status} on:change={(e) => updateReportStatus(report.id, e.target.value)} class="select min-w-32 text-xs">
+                  <option value="open">Open</option>
+                  <option value="reviewing">Reviewing</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="dismissed">Dismissed</option>
+                </select>
+              </td>
+            </tr>
+          {/each}
+          {#if reports.length === 0}
+            <tr><td colspan="5" class="py-10 text-center text-fg-dim">No abuse reports yet.</td></tr>
+          {/if}
+        </tbody>
+      </table>
+    </div>
+
+  {:else if activeTab === 'privacy'}
+    <div class="grid gap-6 lg:grid-cols-2">
+      <section class="card">
+        <p class="eyebrow mb-4">External processors</p>
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-fg-muted">Plausible</dt><dd class="text-fg">{settings.ENABLE_PLAUSIBLE === 'true' ? settings.PLAUSIBLE_DOMAIN || 'Enabled' : 'Disabled'}</dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-fg-muted">Google Web Risk</dt><dd class="text-fg">{settings.ENABLE_WEB_RISK === 'true' ? 'Enabled' : 'Disabled'}</dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-fg-muted">URLhaus</dt><dd class="text-fg">{settings.ENABLE_URLHAUS === 'true' ? 'Enabled' : 'Disabled'}</dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-fg-muted">PhishTank</dt><dd class="text-fg">{settings.ENABLE_PHISHTANK === 'true' ? 'Enabled' : 'Disabled'}</dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-fg-muted">Spamhaus DBL</dt><dd class="text-fg">{settings.ENABLE_SPAMHAUS_DBL === 'true' ? 'Enabled' : 'Disabled'}</dd></div>
+        </dl>
+      </section>
+      <section class="card">
+        <p class="eyebrow mb-4">Privacy notice guidance</p>
+        <div class="space-y-3 text-sm text-fg-muted">
+          <p>Open-QR stores scan timestamps, coarse country, device class, and hashes of IP/User-Agent values. Raw identifiers are not persisted.</p>
+          {#if settings.ENABLE_PLAUSIBLE === 'true'}
+            <p>Plausible is enabled. Your privacy notice should disclose the script URL, configured domain, and whether Plausible is self-hosted or hosted by Plausible Insights.</p>
+          {/if}
+          {#if settings.ENABLE_THREAT_INTEL === 'true'}
+            <p>External URL reputation checks are enabled. Your privacy notice should disclose that submitted destination URLs may be sent to enabled reputation providers for abuse prevention.</p>
+          {/if}
+          <p>When changing privacy-impacting settings, bump the Terms version so existing users are asked to re-accept.</p>
+        </div>
+      </section>
     </div>
 
   {:else if activeTab === 'analytics'}

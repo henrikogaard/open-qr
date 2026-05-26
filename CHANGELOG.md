@@ -4,6 +4,24 @@ All notable changes to Open-QR will go here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [semver](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-05-27
+
+### Added
+- Per-QR analytics pages with daily scans, country/device breakdowns, and recent scan events.
+- Campaign grouping for QR codes, including dashboard campaign summaries and filters.
+- Optional custom slugs with admin-only enforcement by default.
+- Public abuse-report flow and an admin report review queue.
+- Optional destination interstitial before redirecting scanners.
+- Admin privacy profile showing enabled external processors and privacy-notice guidance.
+- Public `/status` page and `/api/v1/status` operational endpoint.
+- Optional external URL reputation checks for Google Web Risk, URLhaus, PhishTank, and Spamhaus DBL.
+- Optional Plausible Analytics integration with configurable domain and script URL.
+
+### Changed
+- QR preview/rendering now validates the target URL separately from the generated local short URL, so localhost previews are not blocked by IP-literal target protection.
+- `db:init` now seeds the full runtime settings set, including the v1.2.0 feature flags.
+- Privacy copy now says integrations are disabled by default and operator-controlled, rather than claiming no third parties can ever be enabled.
+
 ## [1.1.0] — 2026-05-26
 
 Initial public release. Open-QR is now considered ready to run as a

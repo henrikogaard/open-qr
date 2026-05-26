@@ -24,6 +24,7 @@
             <li><a href="/#features" class="hover:text-fg">Features</a></li>
             <li><a href="/#privacy" class="hover:text-fg">Privacy</a></li>
             <li><a href="/#api" class="hover:text-fg">API</a></li>
+            <li><a href="/status" class="hover:text-fg">Status</a></li>
           </ul>
         </div>
         <div>
@@ -47,7 +48,7 @@
     </div>
 
     <div class="mt-10 flex flex-col items-start justify-between gap-2 border-t border-border pt-6 text-xs text-fg-dim sm:flex-row sm:items-center">
-      <p class="font-mono">Open-QR · v1.1.0 · self-hosted</p>
+      <p class="font-mono">Open-QR · v1.2.0 · self-hosted</p>
       <p>Made in Europe</p>
     </div>
   </div>

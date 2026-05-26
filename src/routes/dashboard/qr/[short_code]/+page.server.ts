@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { getQRCode } from '$lib/server/qr';
 import { buildShortUrl } from '$lib/server/urls';
+import { listCampaigns } from '$lib/server/campaigns';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
   if (!locals.user) {
@@ -20,6 +21,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   return {
     user: locals.user,
     qr,
+    campaigns: listCampaigns(locals.user.id),
     shortUrl: buildShortUrl(params.short_code, url.origin)
   };
 };

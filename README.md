@@ -4,7 +4,7 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 
 **Try it live: [openqr.xyz](https://openqr.xyz)** — the maintainer-run reference instance, free to use under its [Terms of Use](https://openqr.xyz/terms).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -12,6 +12,7 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 
 - [Features](#features)
 - [Screenshots](#screenshots)
+- [Documentation](#documentation)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
   - [Docker Compose (Recommended)](#docker-compose-recommended)
@@ -61,6 +62,9 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 
 ### Management
 - **User dashboard**: View, edit, disable, enable, and delete your QR codes
+- **Per-QR analytics**: Review scan totals, daily scans, country/device breakdowns, and recent events per code
+- **Campaigns**: Group QR codes into campaigns and compare aggregate scan counts
+- **Custom slugs**: Optional admin-controlled vanity short codes such as `/go/summer-sale`
 - **Bulk generation**: Upload a CSV to create multiple QR codes at once
 - **API keys**: Generate and revoke keys for programmatic access
 
@@ -68,54 +72,185 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 - **Global QR management**: View and manage all QR codes in the system
 - **URL blacklist**: Block specific domains, patterns, or wildcards
 - **Suspicious URL detection**: Automatically block URL shorteners, IP-based URLs, excessive subdomains, and non-HTTPS phishing patterns
+- **Abuse reports**: Review scanner-submitted reports and track open/resolved status
+- **Privacy profile**: See enabled external processors and operator guidance for privacy notices
 - **App settings**: Configure branding, authentication, defaults, and rate limits
 - **Analytics overview**: Global scan statistics, top QR codes, geographic distribution
 
 ### Analytics & Privacy
 - **Scan tracking**: Count scans with timestamp, country (from IP), and device info
-- **Privacy-first**: No raw IP storage (SHA-256 hashed), no fingerprinting, no third-party trackers
+- **Privacy-first**: No raw IP storage (SHA-256 hashed), no fingerprinting, no third-party trackers by default
 - **No cookies for tracking**: Only authentication session cookies
 
 ---
 
 ## Screenshots
 
-```
-Landing Page (QR Generator)
-+---------------------------+
-|  Open-QR                  |
-|  [URL Input]              |
-|  [Styling Options]        |
-|  [Generate Button]        |
-|                           |
-|  [QR Preview]             |
-|  [Short URL]              |
-+---------------------------+
+### Generator
 
-User Dashboard
-+---------------------------+
-|  My QR Codes  [Create New]|
-|  +---------------------+  |
-|  | QR Card 1          |  |
-|  | [Copy][Edit][Del]  |  |
-|  +---------------------+  |
-|  +---------------------+  |
-|  | QR Card 2          |  |
-|  | [Copy][Edit][Del]  |  |
-|  +---------------------+  |
-+---------------------------+
+The first screen is the usable QR generator: target URL, styling controls,
+optional campaign/custom slug fields, live preview, and PNG/SVG downloads.
 
-Admin Panel
-+---------------------------+
-|  [QRs][Blacklist][Settings]
-|                           |
-|  Total Scans: 1,234       |
-|  Active QRs: 56           |
-|                           |
-|  Blacklist Patterns       |
-|  [Add Pattern]            |
-+---------------------------+
+![Open-QR generator](docs/screenshots/01-generator.png)
+
+### Dashboard
+
+Signed-in users get campaign summaries, filters, QR cards, edit/stats links,
+API-key management, and bulk-import access.
+
+![Open-QR dashboard](docs/screenshots/02-dashboard.png)
+
+### Per-QR Analytics
+
+Each QR code has its own analytics page with total scans, country/device
+breakdowns, daily scan bars, and recent scan events.
+
+![Open-QR per-QR analytics](docs/screenshots/03-qr-stats.png)
+
+### Admin Controls
+
+Admins can configure public base URL, auth mode, custom slugs, destination
+interstitials, URL reputation providers, and Plausible Analytics.
+
+![Open-QR admin settings](docs/screenshots/04-admin-settings.png)
+
+The privacy profile explains which external processors are enabled and what
+operators should disclose in their privacy notice.
+
+![Open-QR admin privacy profile](docs/screenshots/05-admin-privacy.png)
+
+### Abuse Reports And Status
+
+Scanners can report suspicious QR codes, and operators can expose a lightweight
+status page for deployment checks.
+
+![Open-QR abuse report page](docs/screenshots/06-report.png)
+
+![Open-QR status page](docs/screenshots/07-status.png)
+
+### Mobile
+
+Core management workflows are responsive for phone-sized screens.
+
+![Open-QR mobile dashboard](docs/screenshots/08-mobile-dashboard.png)
+
+---
+
+## Documentation
+
+This section is the practical map of how Open-QR is meant to be operated. The
+short version: run one Node/SvelteKit service, keep SQLite backed up, configure
+your public URL and mail provider, then decide how open or locked down your
+instance should be.
+
+### Core Concepts
+
+**QR code**
+A saved QR record stores the target URL, visual style, optional expiry,
+optional password gate, active/disabled state, owner, scan count, and optional
+campaign. New PNG/SVG exports encode the short URL (`/go/<short_code>`), not
+the raw destination, so scans pass through Open-QR and can be counted.
+
+**Short URL**
+Every QR gets a short code. By default it is generated with `nanoid`. If
+`ENABLE_CUSTOM_SLUGS=true`, users may request readable slugs such as
+`/go/spring-launch`. `CUSTOM_SLUGS_ADMIN_ONLY=true` is the recommended public
+setting because printed slugs are valuable namespace.
+
+**Campaign**
+A campaign is a user-owned grouping for QR codes. Use campaigns for clients,
+events, print runs, seasonal launches, or anything where aggregate scan counts
+matter more than individual codes.
+
+**Scan log**
+Each successful redirect records a timestamp, coarse country from trusted proxy
+headers when present, device class, and SHA-256 hashes of IP/User-Agent values.
+Raw IP addresses and raw User-Agent strings are not persisted.
+
+**Admin settings**
+Most product behavior is stored in SQLite and can be changed at runtime from
+`/admin`. Process-level deployment behavior, such as proxy headers and mail
+provider credentials, remains in environment variables.
+
+### Recommended Production Setup
+
+1. Put Open-QR behind HTTPS with a reverse proxy.
+2. Set `PUBLIC_BASE_URL` in `/admin → Settings` to the public origin users will scan.
+3. Set `PROTOCOL_HEADER=x-forwarded-proto`, `HOST_HEADER=x-forwarded-host`, and `ADDRESS_HEADER=x-forwarded-for` in the container environment.
+4. Configure Resend or SMTP for OTP login.
+5. Disable anonymous creation for public instances.
+6. Keep `ENABLE_BLACKLIST` and `ENABLE_SUSPICIOUS_BLOCK` enabled.
+7. Enable Google Web Risk if abuse prevention matters; optionally add URLhaus, PhishTank, or Spamhaus DBL.
+8. Keep custom slugs admin-only unless you trust every creator.
+9. Decide whether scanners should see the destination interstitial before redirect.
+10. Back up the SQLite database file regularly.
+
+### URL Safety Layers
+
+Open-QR uses multiple layers because no single list catches everything:
+
+| Layer | Default | Purpose |
+|---|---:|---|
+| Scheme allow-list | On | Blocks `javascript:`, `file:`, `data:`, `ftp:` and other unsafe schemes. |
+| Admin blacklist | On | Blocks operator-defined substrings, wildcard patterns, or regexes. |
+| Suspicious URL heuristics | On | Blocks shorteners, IP-literal targets, excessive subdomains, and non-HTTPS phishing-like paths. |
+| External reputation providers | Off | Optional checks against Google Web Risk, URLhaus, PhishTank, and Spamhaus DBL. |
+| Destination interstitial | Off | Shows scanners the destination host before redirecting. |
+
+External checks fail open by default so provider outages do not block QR
+creation. Set `THREAT_INTEL_FAIL_CLOSED=true` if blocking during provider
+outages is preferable for your instance.
+
+### Privacy And Processor Guidance
+
+By default, Open-QR has no third-party tracking script. If you enable Plausible,
+the layout injects the configured script URL with the configured `data-domain`.
+That is intentionally visible in `/admin → Privacy`, along with guidance for
+your privacy notice.
+
+If you enable external URL reputation providers, submitted destination URLs may
+leave your instance for abuse-prevention checks. Tell users which providers are
+enabled, why the checks happen, and whether failures block creation.
+
+When privacy-impacting settings change, bump `TERMS_VERSION` in the admin panel
+so logged-in users are asked to re-accept the Terms.
+
+### Operational Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `/api/v1/health` | Minimal probe for uptime checks. |
+| `/api/v1/status` | Structured deployment status: database, mail, public URL, abuse controls, and enabled features. |
+| `/status` | Human-readable status page. |
+| `/report/:short_code` | Public abuse-report page for a QR code. |
+| `/dashboard/qr/:short_code/stats` | Per-QR owner/admin analytics page. |
+
+### Upgrade Notes For 1.2.0
+
+Run migrations before serving traffic:
+
+```bash
+npm run db:migrate
 ```
+
+Then run or re-run:
+
+```bash
+npm run db:init
+```
+
+`db:init` is idempotent. In 1.2.0 it also seeds the newer feature flags and
+privacy settings for fresh databases.
+
+Review these settings after upgrading:
+
+- `ENABLE_CUSTOM_SLUGS`
+- `CUSTOM_SLUGS_ADMIN_ONLY`
+- `ENABLE_DESTINATION_INTERSTITIAL`
+- `ENABLE_THREAT_INTEL`
+- `ENABLE_PLAUSIBLE`
+- `PLAUSIBLE_DOMAIN`
+- `PLAUSIBLE_SCRIPT_SRC`
 
 ---
 
@@ -228,6 +363,22 @@ First-time defaults are inserted by `initDefaultSettings()` on startup.
 | `ENABLE_ANONYMOUS_CREATION` | `true` | Allow QR creation without login. **Turn off on public-facing instances** so Terms acceptance is bound to an account. |
 | `ENABLE_BLACKLIST` | `true` | Enable URL blocklist enforcement. |
 | `ENABLE_SUSPICIOUS_BLOCK` | `true` | Enable heuristic suspicious-URL detection (URL shorteners, IP literals, phishing keywords on non-HTTPS, deep subdomains). |
+| `ENABLE_THREAT_INTEL` | `false` | Enable optional external URL reputation checks. Individual providers still need to be enabled below. |
+| `THREAT_INTEL_FAIL_CLOSED` | `false` | When false, provider outages do not block QR creation. When true, provider errors block the URL. |
+| `ENABLE_WEB_RISK` | `false` | Check URLs with Google Web Risk. Requires `WEB_RISK_API_KEY`. |
+| `WEB_RISK_API_KEY` | empty | Google Web Risk API key. |
+| `ENABLE_URLHAUS` | `false` | Check URLs with URLhaus. Focused on malware distribution URLs. |
+| `URLHAUS_AUTH_KEY` | empty | Optional URLhaus Auth-Key. |
+| `ENABLE_PHISHTANK` | `false` | Check URLs with PhishTank. Focused on phishing URLs. |
+| `PHISHTANK_APP_KEY` | empty | Optional PhishTank application key. |
+| `ENABLE_SPAMHAUS_DBL` | `false` | Check hostnames against Spamhaus DBL using DNS lookups. |
+| `SPAMHAUS_DBL_ZONE` | `dbl.spamhaus.org` | Spamhaus DBL DNS zone. Change only if your Spamhaus plan requires a custom zone. |
+| `ENABLE_PLAUSIBLE` | `false` | Inject the Plausible Analytics browser script when a domain is also configured. |
+| `PLAUSIBLE_DOMAIN` | empty | Domain sent in the Plausible `data-domain` attribute. |
+| `PLAUSIBLE_SCRIPT_SRC` | `https://plausible.io/js/script.js` | Plausible script URL. Change for self-hosted Plausible. |
+| `ENABLE_CUSTOM_SLUGS` | `false` | Allow user-supplied short codes. |
+| `CUSTOM_SLUGS_ADMIN_ONLY` | `true` | Restrict custom slug creation to admins. Recommended for public instances. |
+| `ENABLE_DESTINATION_INTERSTITIAL` | `false` | Show an intermediate destination confirmation page before redirecting scans. |
 | `DEFAULT_TEMPLATE` | `default` | Default QR style template. |
 | `DEFAULT_ERROR_CORRECTION` | `M` | Default QR error correction level. |
 | `RATE_LIMIT_PER_MINUTE` | `60` | Per-user / per-IP-hash limit on `/api/*`. `0` = unlimited. |
@@ -339,6 +490,7 @@ If you're hosting an instance that strangers will use, the operator checklist:
 - **Tune `MAX_QR_PER_USER` and `RATE_LIMIT_PER_MINUTE`** for your expected
   traffic. Reasonable starting points: `100` and `60`.
 - **Keep the blocklist on** (`ENABLE_BLACKLIST` + `ENABLE_SUSPICIOUS_BLOCK`).
+- **Enable threat intelligence for public instances** if you expect abuse. Google Web Risk is the strongest managed default; URLhaus, PhishTank, and Spamhaus DBL can be enabled as extra layers. Leave `THREAT_INTEL_FAIL_CLOSED=false` unless you would rather block QR creation during provider outages.
 - **Back up `data/openqr.db` regularly.** It's the only state — see
   [Backup](#backup) below.
 - **Bump `TERMS_VERSION`** whenever you change the policy materially.
@@ -572,6 +724,8 @@ Content-Type: application/json
     "centerTextColor": "#000000",
     "errorCorrection": "M"
   },
+  "shortCode": "optional-custom-slug",
+  "campaignId": 123,
   "expiresAt": "2025-12-31T23:59:59Z",
   "password": "optional-password"
 }
@@ -617,6 +771,31 @@ DELETE /api/v1/qr/:short_code
 #### Get QR Stats
 ```http
 GET /api/v1/qr/:short_code/stats
+```
+
+### Campaigns
+
+Campaign endpoints require login.
+
+#### List Campaigns
+```http
+GET /api/v1/campaigns
+```
+
+#### Create Campaign
+```http
+POST /api/v1/campaigns
+Content-Type: application/json
+
+{
+  "name": "Spring launch",
+  "description": "Posters and flyers"
+}
+```
+
+#### Delete Campaign
+```http
+DELETE /api/v1/campaigns/:id
 ```
 
 ### Admin
@@ -682,11 +861,28 @@ Content-Type: application/json
 GET /api/v1/admin/analytics
 ```
 
+#### Review Abuse Reports
+```http
+GET /api/v1/admin/reports
+PATCH /api/v1/admin/reports
+Content-Type: application/json
+
+{
+  "id": 123,
+  "status": "resolved"
+}
+```
+
 ### Health
 
 #### Health Check
 ```http
 GET /api/v1/health
+```
+
+#### Operational Status
+```http
+GET /api/v1/status
 ```
 
 ---
@@ -720,6 +916,8 @@ SQLite database with the following tables:
 - `otp_codes` - Pending OTP codes
 - `qr_codes` - Generated QR codes with styling metadata
 - `scan_logs` - Privacy-respecting scan analytics
+- `campaigns` - User-owned campaign groups for QR codes
+- `abuse_reports` - Public QR abuse reports for admin review
 - `blacklist` - Blocked URL patterns
 - `settings` - App configuration key-value store
 
@@ -833,7 +1031,8 @@ Open-QR is designed with privacy as a core principle:
 
 - **No raw IP addresses**: All IPs are SHA-256 hashed before storage
 - **No fingerprinting**: No browser fingerprinting or unique visitor tracking
-- **No third-party services**: No Google Analytics, no external trackers
+- **No third-party services by default**: No Google Analytics and no external trackers unless the operator enables an optional integration
+- **Optional Plausible**: Operators can enable Plausible in the admin panel; doing so adds a third-party/self-hosted analytics script and should be reflected in the operator's privacy notice
 - **Minimal data collection**: Only scan timestamps and rough country (optional)
 - **No cookies for tracking**: Only authentication session cookies
 - **Self-hosted**: Your data stays on your server
@@ -845,7 +1044,6 @@ Open-QR is designed with privacy as a core principle:
 Future features planned for upcoming releases:
 
 - [ ] **Custom domains**: Allow users to use their own domain for short URLs
-- [ ] **QR campaigns**: Group QR codes into campaigns with aggregate analytics
 - [ ] **A/B testing**: Split traffic between multiple target URLs
 - [ ] **Scheduled redirects**: Change target URL based on time/date
 - [ ] **Webhooks**: Notify external services on scan events

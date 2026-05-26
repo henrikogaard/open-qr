@@ -13,6 +13,11 @@ function assertUsableTargetUrl(url: string): void {
   if (blacklist.blocked) throw new Error(`URL blocked: ${blacklist.reason}`);
 }
 
+function assertEncodableUrl(url: string): void {
+  const scheme = isAllowedScheme(url);
+  if (!scheme.allowed) throw new Error(scheme.reason!);
+}
+
 /**
  * Throws if the user has hit the MAX_QR_PER_USER cap. `0` means unlimited.
  * Anonymous codes (userId null) are not capped here — they're already
@@ -161,7 +166,7 @@ export async function generateQRImage(
   targetUrl: string,
   style: QRStyle = {}
 ): Promise<string> {
-  assertUsableTargetUrl(targetUrl);
+  assertEncodableUrl(targetUrl);
 
   const ec = resolveErrorCorrection(style);
   const tpl = resolveTemplate(style);
@@ -271,7 +276,7 @@ export async function generateQRSVG(
   targetUrl: string,
   style: QRStyle = {}
 ): Promise<string> {
-  assertUsableTargetUrl(targetUrl);
+  assertEncodableUrl(targetUrl);
 
   const ec = resolveErrorCorrection(style);
   const tpl = resolveTemplate(style);
@@ -380,7 +385,8 @@ export function createQRCode(
   style: QRStyle = {},
   shortCode?: string,
   expiresAt?: string,
-  password?: string
+  password?: string,
+  campaignId?: number | null
 ): { shortCode: string } {
   assertUsableTargetUrl(targetUrl);
   assertUnderQuota(userId);
@@ -391,8 +397,9 @@ export function createQRCode(
     INSERT INTO qr_codes (
       short_code, target_url, user_id, expires_at, password_hash,
       template, foreground_color, background_color, border_size, border_style,
-      center_type, center_image_url, center_text, center_text_color, error_correction
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      center_type, center_image_url, center_text, center_text_color, error_correction,
+      campaign_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     code,
     targetUrl,
@@ -408,7 +415,8 @@ export function createQRCode(
     style.centerImageUrl || null,
     style.centerText || null,
     style.centerTextColor || '#000000',
-    style.errorCorrection || 'M'
+    style.errorCorrection || 'M',
+    campaignId || null
   );
   
   return { shortCode: code };
@@ -422,7 +430,8 @@ export function updateQRCode(shortCode: string, updates: Partial<any>) {
   const allowedFields = [
     'target_url', 'expires_at', 'password_hash', 'is_active',
     'template', 'foreground_color', 'background_color', 'border_size', 'border_style',
-    'center_type', 'center_image_url', 'center_text', 'center_text_color', 'error_correction'
+    'center_type', 'center_image_url', 'center_text', 'center_text_color', 'error_correction',
+    'campaign_id'
   ];
   
   const fields = Object.keys(updates).filter(f => allowedFields.includes(f));

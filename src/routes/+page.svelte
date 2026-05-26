@@ -3,7 +3,7 @@
   import Navbar from '$lib/components/Navbar.svelte';
   import Footer from '$lib/components/Footer.svelte';
 
-  /** @type {{ user?: { id: number; email: string; isAdmin: boolean; termsAcceptedVersion?: string | null } | null; termsVersion?: string }} */
+  /** @type {{ user?: { id: number; email: string; isAdmin: boolean; termsAcceptedVersion?: string | null } | null; termsVersion?: string; featureFlags?: { customSlugsEnabled?: boolean; customSlugsAdminOnly?: boolean } }} */
   export let data;
 
   const features = [
@@ -54,7 +54,7 @@
   ];
   const privacyNo = [
     'Raw IP addresses or full request fingerprints',
-    'Third-party trackers, pixels, or analytics SDKs',
+    'Third-party trackers by default; operators may explicitly enable Plausible',
     'Personal data brokers or ad networks of any kind',
     'Cross-site cookies, localStorage profiling, or telemetry'
   ];
@@ -84,14 +84,14 @@
 
   <div class="relative mx-auto max-w-7xl px-4 pt-20 pb-16 sm:px-6 lg:px-8 lg:pt-28">
     <div class="mx-auto max-w-3xl text-center">
-      <p class="eyebrow">v1.1.0 · MIT licensed · self-hosted</p>
+      <p class="eyebrow">v1.2.0 · MIT licensed · self-hosted</p>
       <h1 class="mt-4 text-4xl font-semibold tracking-tight text-fg sm:text-5xl lg:text-6xl">
         QR codes that
         <span class="text-accent">stay yours.</span>
       </h1>
       <p class="mx-auto mt-5 max-w-2xl text-lg text-fg-muted">
         A self-hosted, open-source QR generator with optional auth, scan analytics,
-        and admin controls. No SaaS account, no trackers, no third parties — ever.
+        and admin controls. No SaaS account, no trackers by default, and optional integrations you control.
       </p>
       <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
         <a href="#generate" class="btn-primary btn-lg">Create a QR code</a>
@@ -130,7 +130,7 @@
       {/if}
     </div>
 
-    <QRGenerator user={data?.user} termsVersion={data?.termsVersion ?? ''} />
+    <QRGenerator user={data?.user} termsVersion={data?.termsVersion ?? ''} featureFlags={data?.featureFlags || {}} />
   </div>
 </section>
 
@@ -208,8 +208,8 @@
         <p class="mt-4 text-fg-muted">
           Open-QR is engineered so there is nothing for us to leak — because there is no us.
           You run it. Raw identifiers are never persisted; sessions are HTTP-only and scoped
-          to the auth path; tracking pixels and third-party scripts simply do not exist in
-          the codebase.
+          to the auth path; third-party scripts are absent unless an operator explicitly
+          enables the optional Plausible integration.
         </p>
         <p class="mt-4 text-fg-muted">
           The full source is on GitHub under the MIT license. Audit it, fork it, deploy it.

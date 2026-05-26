@@ -4,6 +4,7 @@ import { getQRCode, incrementScanCount, verifyQRPassword } from '$lib/server/qr'
 import { db } from '$lib/db';
 import { createHash } from 'crypto';
 import { detectCountry, detectDeviceClass } from '$lib/server/scan-meta';
+import { getBooleanSetting } from '$lib/server/settings';
 
 export const load: PageServerLoad = async ({ params, request, url }) => {
   const qr = getQRCode(params.short_code);
@@ -27,6 +28,19 @@ export const load: PageServerLoad = async ({ params, request, url }) => {
       requiresPassword: true,
       invalidPassword: password !== null,
       shortCode: params.short_code
+    };
+  }
+
+  if (getBooleanSetting('ENABLE_DESTINATION_INTERSTITIAL', false) && url.searchParams.get('continue') !== '1') {
+    return {
+      interstitial: true,
+      shortCode: params.short_code,
+      targetUrl: qr.target_url,
+      targetHost: new URL(qr.target_url).hostname,
+      continueHref: `${url.pathname}?${new URLSearchParams({
+        ...(password ? { password } : {}),
+        continue: '1'
+      }).toString()}`
     };
   }
   

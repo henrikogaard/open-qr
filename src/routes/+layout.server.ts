@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { db } from '$lib/db';
-import { getSetting } from '$lib/server/settings';
+import { getBooleanSetting, getSetting } from '$lib/server/settings';
 
 export const load: LayoutServerLoad = async ({ locals }) => {
   const termsVersion = getSetting('TERMS_VERSION', '2026-05-26');
@@ -15,5 +15,23 @@ export const load: LayoutServerLoad = async ({ locals }) => {
     };
   }
 
-  return { user, termsVersion };
+  const plausibleEnabled = getBooleanSetting('ENABLE_PLAUSIBLE', false);
+  const plausibleDomain = getSetting('PLAUSIBLE_DOMAIN', '').trim();
+
+  return {
+    user,
+    termsVersion,
+    featureFlags: {
+      customSlugsEnabled: getBooleanSetting('ENABLE_CUSTOM_SLUGS', false),
+      customSlugsAdminOnly: getBooleanSetting('CUSTOM_SLUGS_ADMIN_ONLY', true),
+      destinationInterstitial: getBooleanSetting('ENABLE_DESTINATION_INTERSTITIAL', false)
+    },
+    plausible: {
+      enabled: plausibleEnabled && plausibleDomain.length > 0,
+      domain: plausibleEnabled ? plausibleDomain : '',
+      scriptSrc: plausibleEnabled
+        ? getSetting('PLAUSIBLE_SCRIPT_SRC', 'https://plausible.io/js/script.js').trim()
+        : ''
+    }
+  };
 };

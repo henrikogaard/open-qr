@@ -1,4 +1,5 @@
 <script>
+  // @ts-nocheck
   import { onMount } from 'svelte';
   import Navbar from '$lib/components/Navbar.svelte';
   import QRCard from '$lib/components/QRCard.svelte';
@@ -8,8 +9,10 @@
   
   /** @type {any[]} */
   let qrCodes = [];
+  let campaigns = [];
   let loading = true;
   let filter = 'all';
+  let campaignFilter = 'all';
   
   /** @type {any[]} */
   let apiKeys = [];
@@ -18,7 +21,7 @@
   let revealedToken = '';
 
   onMount(async () => {
-    await Promise.all([loadQRCodes(), loadApiKeys()]);
+    await Promise.all([loadQRCodes(), loadCampaigns(), loadApiKeys()]);
   });
 
   async function loadQRCodes() {
@@ -34,6 +37,12 @@
     const response = await fetch('/api/v1/keys');
     const result = await response.json();
     if (result.success) apiKeys = result.data;
+  }
+
+  async function loadCampaigns() {
+    const response = await fetch('/api/v1/campaigns');
+    const result = await response.json();
+    if (result.success) campaigns = result.data;
   }
 
   async function issueKey() {
@@ -92,6 +101,7 @@
   }
   
   $: filteredQRCodes = qrCodes.filter(qr => {
+    if (campaignFilter !== 'all' && String(qr.campaign_id || '') !== campaignFilter) return false;
     if (filter === 'active') return qr.is_active;
     if (filter === 'inactive') return !qr.is_active;
     return true;
@@ -113,7 +123,18 @@
     </a>
   </header>
 
-  <div class="mb-6 inline-flex rounded-md border border-border bg-surface p-1 text-sm">
+  <section class="mb-8 grid gap-4 lg:grid-cols-3">
+    {#each campaigns as campaign}
+      <article class="card">
+        <p class="eyebrow">{campaign.qr_count} codes</p>
+        <h2 class="mt-2 truncate text-base font-semibold text-fg">{campaign.name}</h2>
+        <p class="mt-1 font-mono text-sm tabular text-fg-muted">{campaign.total_scans} scans</p>
+      </article>
+    {/each}
+  </section>
+
+  <div class="mb-6 flex flex-wrap gap-3">
+  <div class="inline-flex rounded-md border border-border bg-surface p-1 text-sm">
     {#each [{v:'all',l:'All'},{v:'active',l:'Active'},{v:'inactive',l:'Disabled'}] as opt}
       <button
         type="button"
@@ -123,6 +144,13 @@
         {opt.l}
       </button>
     {/each}
+  </div>
+  <select bind:value={campaignFilter} class="select w-auto min-w-44">
+    <option value="all">All campaigns</option>
+    {#each campaigns as campaign}
+      <option value={campaign.id}>{campaign.name}</option>
+    {/each}
+  </select>
   </div>
 
   {#if loading}

@@ -4,6 +4,8 @@ import { createQRCode } from '$lib/server/qr';
 import { getBooleanSetting } from '$lib/server/settings';
 import { buildShortUrl } from '$lib/server/urls';
 import { parseCsv } from '$lib/server/csv';
+import { assertSafeTargetUrl } from '$lib/server/url-safety';
+import { getCampaign } from '$lib/server/campaigns';
 
 // Caps on a single bulk request. Adapter-node's BODY_SIZE_LIMIT (default
 // 512 KB) provides a hard backstop; these limits are the friendly errors
@@ -19,7 +21,7 @@ const MAX_BULK_ROWS = 1000;
  *   targetUrl (required)
  *   template, foregroundColor, backgroundColor, borderSize, borderStyle,
  *   centerType, centerText, centerTextColor, errorCorrection,
- *   expiresAt, password
+ *   expiresAt, password, campaignId
  *
  * Returns per-row results so the caller can show partial-success state.
  */
@@ -83,15 +85,22 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
     }
     const expiresAt = cells[indexFor('expiresAt')]?.trim() || undefined;
     const password = cells[indexFor('password')]?.trim() || undefined;
+    const campaignIdRaw = cells[indexFor('campaignId')]?.trim();
+    const campaignId = campaignIdRaw ? Number(campaignIdRaw) : undefined;
 
     try {
+      await assertSafeTargetUrl(targetUrl);
+      if (campaignId && (!locals.user || !getCampaign(campaignId, locals.user.id))) {
+        throw new Error('Campaign not found');
+      }
       const { shortCode } = createQRCode(
         targetUrl,
         locals.user?.id || null,
         style,
         undefined,
         expiresAt,
-        password
+        password,
+        campaignId
       );
       results.push({
         row: i + 1,

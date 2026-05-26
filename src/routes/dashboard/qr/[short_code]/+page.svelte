@@ -10,6 +10,7 @@
   let isActive = Boolean(data.qr.is_active);
   let expiresAt = data.qr.expires_at ? data.qr.expires_at.slice(0, 16) : '';
   let password = '';
+  let campaignId = data.qr.campaign_id ? String(data.qr.campaign_id) : '';
   let template = data.qr.template || 'default';
   let foregroundColor = data.qr.foreground_color || '#000000';
   let backgroundColor = data.qr.background_color || '#FFFFFF';
@@ -115,6 +116,7 @@
           target_url: targetUrl,
           expires_at: expiresAt || null,
           password_hash: password || undefined,
+          campaign_id: campaignId || null,
           is_active: isActive ? 1 : 0,
           template,
           foreground_color: foregroundColor,
@@ -171,6 +173,16 @@
         <input type="checkbox" bind:checked={isActive} class="checkbox" />
         <span>Active</span>
       </label>
+
+      <div>
+        <label for="edit-campaign" class="field-label">Campaign</label>
+        <select id="edit-campaign" bind:value={campaignId} class="select">
+          <option value="">No campaign</option>
+          {#each data.campaigns as campaign}
+            <option value={campaign.id}>{campaign.name}</option>
+          {/each}
+        </select>
+      </div>
 
       <div class="grid gap-4 md:grid-cols-2">
         <div>

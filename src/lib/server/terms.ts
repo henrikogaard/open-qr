@@ -1,4 +1,4 @@
-import { getSetting } from './settings';
+import { getBooleanSetting, getSetting } from './settings';
 
 export interface TermsContext {
   version: string;
@@ -6,6 +6,8 @@ export interface TermsContext {
   operator: string;
   contactEmail: string;
   publicBaseUrl: string;
+  plausibleEnabled: boolean;
+  plausibleDomain: string;
 }
 
 export function getTermsContext(): TermsContext {
@@ -14,7 +16,9 @@ export function getTermsContext(): TermsContext {
     brandName: getSetting('BRAND_NAME', 'Open-QR'),
     operator: getSetting('TERMS_OPERATOR', '').trim(),
     contactEmail: getSetting('TERMS_CONTACT_EMAIL', '').trim(),
-    publicBaseUrl: getSetting('PUBLIC_BASE_URL', '').trim()
+    publicBaseUrl: getSetting('PUBLIC_BASE_URL', '').trim(),
+    plausibleEnabled: getBooleanSetting('ENABLE_PLAUSIBLE', false),
+    plausibleDomain: getSetting('PLAUSIBLE_DOMAIN', '').trim()
   };
 }
 
@@ -90,7 +94,9 @@ export function getTermsSections(ctx: TermsContext): TermsSection[] {
         'For every scan: a SHA-256 hash of the visitor\'s IP address, a SHA-256 hash of the User-Agent string, a coarse device class (mobile / tablet / desktop / bot), the country code when supplied by the upstream reverse proxy (Cloudflare, Vercel, Fly, Netlify, etc.), and a timestamp. Raw IPs and raw User-Agent strings are never persisted.',
         'For accounts: your email address, OTP login codes (hashed), session identifiers, and any API keys you issue (hashed only).',
         'Retention: scan logs live as long as the QR code they belong to and are deleted when the code is deleted. Sessions auto-expire after 30 days. OTP codes expire after 10 minutes and are single-use. Account data is kept until you request deletion.',
-        'There are no third-party trackers, pixels, analytics SDKs, or advertising integrations. The Service does not profile users or make automated decisions that produce legal effects about you (GDPR Article 22).',
+        ctx.plausibleEnabled && ctx.plausibleDomain
+          ? `This instance loads Plausible Analytics for ${ctx.plausibleDomain}. Plausible is configured by the operator to measure aggregate page usage and referrers without advertising cookies or cross-site profiling.`
+          : 'There are no third-party trackers, pixels, analytics SDKs, or advertising integrations. The Service does not profile users or make automated decisions that produce legal effects about you (GDPR Article 22).',
         `The data controller for this instance is ${who}${ctx.contactEmail ? ` (${ctx.contactEmail})` : ''}. Data is stored on the operator\'s own infrastructure; the operator\'s privacy notice (if separate) discloses the hosting region.`
       ]
     },
