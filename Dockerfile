@@ -8,7 +8,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN mkdir -p /tmp/openqr-build-data && DATABASE_URL=/tmp/openqr-build-data/openqr.db npm run build
 RUN npm prune --omit=dev
 
 FROM node:24-alpine
