@@ -84,7 +84,7 @@
 
   <div class="relative mx-auto max-w-7xl px-4 pt-20 pb-16 sm:px-6 lg:px-8 lg:pt-28">
     <div class="mx-auto max-w-3xl text-center">
-      <p class="eyebrow">v1.0 · MIT licensed · self-hosted</p>
+      <p class="eyebrow">v1.1.0 · MIT licensed · self-hosted</p>
       <h1 class="mt-4 text-4xl font-semibold tracking-tight text-fg sm:text-5xl lg:text-6xl">
         QR codes that
         <span class="text-accent">stay yours.</span>

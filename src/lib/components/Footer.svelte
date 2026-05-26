@@ -47,7 +47,7 @@
     </div>
 
     <div class="mt-10 flex flex-col items-start justify-between gap-2 border-t border-border pt-6 text-xs text-fg-dim sm:flex-row sm:items-center">
-      <p class="font-mono">Open-QR · v1.0 · self-hosted</p>
+      <p class="font-mono">Open-QR · v1.1.0 · self-hosted</p>
       <p>Made in Europe</p>
     </div>
   </div>

@@ -4,7 +4,7 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 
 **Try it live: [openqr.xyz](https://openqr.xyz)** — the maintainer-run reference instance, free to use under its [Terms of Use](https://openqr.xyz/terms).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -198,11 +198,12 @@ listed in [App settings (admin panel)](#app-settings-admin-panel) further down.
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
 | `DATABASE_URL` | `./data/openqr.db` | No | SQLite database file path |
-| `SMTP_HOST` | – | For OTP | SMTP server hostname. Leave unset and OTP codes are printed to stdout instead — useful for dev or single-admin installs. |
-| `SMTP_PORT` | `587` | No | SMTP port |
-| `SMTP_USER` | – | For OTP | SMTP username |
-| `SMTP_PASS` | – | For OTP | SMTP password |
-| `SMTP_FROM` | – | For OTP | `From:` address |
+| `RESEND_API_KEY` | – | Either this or SMTP | [Resend](https://resend.com) API key. When set, OTP emails go through Resend's HTTP API instead of SMTP. |
+| `SMTP_HOST` | – | Either this or Resend | SMTP server hostname. Used only when `RESEND_API_KEY` is unset. |
+| `SMTP_PORT` | `587` | No | SMTP port. `465` enables implicit TLS; other ports use STARTTLS. |
+| `SMTP_USER` | – | If SMTP needs auth | SMTP username |
+| `SMTP_PASS` | – | If SMTP needs auth | SMTP password |
+| `MAIL_FROM` | – | For email | `From:` address used by whichever provider is active. Falls back to `SMTP_FROM` for backward compatibility. |
 | `PROTOCOL_HEADER` | – | Behind TLS proxy | Set to `x-forwarded-proto` so `Secure` cookies are emitted when served over HTTPS through a reverse proxy. |
 | `HOST_HEADER` | – | Behind reverse proxy | Set to `x-forwarded-host` so SvelteKit knows its public hostname. |
 | `ORIGIN` | – | Sometimes | Full public origin (e.g. `https://qr.example.com`); needed if your proxy doesn't forward the right `Host` header. |
@@ -260,30 +261,42 @@ ENABLE_ANONYMOUS_CREATION=true
 ```
 No authentication at all. Everyone can create QR codes but nobody can edit them later.
 
-### SMTP Setup
+### Email setup
 
-For OTP emails, configure SMTP settings. If SMTP is not configured, OTP codes are printed to the console (useful for development):
+OTP login codes are the only emails Open-QR sends. The mailer picks a
+provider at startup based on env vars, in this order:
 
-**Gmail:**
+1. **Resend** (`RESEND_API_KEY`) — HTTP API, no SMTP needed.
+2. **SMTP** (`SMTP_HOST`) — any provider that speaks SMTP.
+3. **Console** — falls back to logging the code to stdout. Useful in dev
+   and on single-admin installs where you don't want to wire up email.
+
+In all cases, the `From:` address comes from `MAIL_FROM` (or `SMTP_FROM`
+as a legacy fallback). For Resend it must be on a domain you've verified
+in their dashboard; for SMTP, whatever your provider allows.
+
+**Resend:**
+```env
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MAIL_FROM="Open-QR <noreply@qr.yourdomain.com>"
+```
+
+**SMTP (Gmail):**
 ```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
 SMTP_PASS=your-app-password
-SMTP_FROM=your-email@gmail.com
+MAIL_FROM=your-email@gmail.com
 ```
 
-**Mailgun:**
-```env
-SMTP_HOST=smtp.mailgun.org
-SMTP_PORT=587
-SMTP_USER=postmaster@your-domain.com
-SMTP_PASS=your-mailgun-password
-SMTP_FROM=noreply@your-domain.com
-```
+**SMTP (Mailgun, Postmark, SES, Brevo, …):** same shape, swap host/port/credentials.
 
-**Console output (development):**
-Leave SMTP_HOST empty and OTP codes will be logged to the console.
+**SMTP on port 465:** set `SMTP_PORT=465` and the mailer uses implicit TLS
+automatically. Other ports use STARTTLS.
+
+**Console (dev):** leave both `RESEND_API_KEY` and `SMTP_HOST` empty.
+You'll see `[DEV MODE] OTP for you@example.com: 123456` in the server log.
 
 ---
 
