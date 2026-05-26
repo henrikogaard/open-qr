@@ -15,7 +15,7 @@ FROM node:24-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache cairo pango giflib jpeg
+RUN apk add --no-cache cairo pango giflib jpeg curl
 
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
