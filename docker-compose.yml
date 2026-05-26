@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  openqr:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+      - ./uploads:/app/uploads
+    environment:
+      - DATABASE_URL=/data/openqr.db
+      - ENABLE_OTP_AUTH=true
+      - ENABLE_ANONYMOUS_CREATION=true
+      - BRAND_NAME=Open-QR
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+    restart: unless-stopped

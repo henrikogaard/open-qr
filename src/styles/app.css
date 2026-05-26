@@ -1,0 +1,232 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Design tokens — see docs/design.md
+ * ------------------------------------------------------------------------- */
+@layer base {
+  :root {
+    /* Light theme — Warm Paper */
+    --bg: 251 249 244;
+    --bg-soft: 244 240 232;
+    --surface: 255 255 255;
+    --surface-2: 237 230 215;
+    --surface-3: 213 204 184;
+    --border: 229 220 199;
+    --border-strong: 189 174 147;
+    --fg: 40 40 40;
+    --fg-muted: 80 73 69;
+    --fg-dim: 124 111 100;
+    --accent: 214 93 14;
+    --accent-fg: 251 249 244;
+    --accent-hover: 175 58 3;
+    --success: 121 116 14;
+    --warning: 181 118 20;
+    --danger: 157 0 6;
+    --info: 7 102 120;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.04);
+
+    color-scheme: light;
+  }
+
+  .dark {
+    /* Dark theme — Gruvbox Dark Hard */
+    --bg: 29 32 33;
+    --bg-soft: 40 40 40;
+    --surface: 50 48 47;
+    --surface-2: 60 56 54;
+    --surface-3: 80 73 69;
+    --border: 60 56 54;
+    --border-strong: 102 92 84;
+    --fg: 235 219 178;
+    --fg-muted: 189 174 147;
+    --fg-dim: 146 131 116;
+    --accent: 250 189 47;
+    --accent-fg: 29 32 33;
+    --accent-hover: 254 128 25;
+    --success: 184 187 38;
+    --warning: 250 189 47;
+    --danger: 251 73 52;
+    --info: 131 165 152;
+
+    --shadow-card: none;
+
+    color-scheme: dark;
+  }
+
+  html {
+    background-color: rgb(var(--bg));
+    color: rgb(var(--fg));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans;
+    accent-color: rgb(var(--accent));
+  }
+
+  *,
+  *::before,
+  *::after {
+    border-color: rgb(var(--border));
+  }
+
+  ::selection {
+    background-color: rgb(var(--accent) / 0.35);
+    color: rgb(var(--fg));
+  }
+
+  ::placeholder {
+    color: rgb(var(--fg-dim));
+    opacity: 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1, h2, h3, h4 {
+    @apply text-fg;
+    letter-spacing: -0.02em;
+  }
+
+  hr {
+    @apply border-t border-border;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Component primitives
+ * ------------------------------------------------------------------------- */
+@layer components {
+  /* Buttons -------------------------------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 h-10
+           text-sm font-medium transition-colors duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed select-none;
+  }
+  .btn-sm { @apply h-8 px-3 text-xs; }
+  .btn-lg { @apply h-12 px-6 text-base; }
+
+  .btn-primary {
+    @apply btn bg-accent text-accent-fg hover:bg-accent-hover;
+  }
+  .btn-secondary {
+    @apply btn bg-surface-2 text-fg border border-border-strong
+           hover:bg-surface-3;
+  }
+  .btn-ghost {
+    @apply btn text-fg-muted hover:text-fg hover:bg-surface-2;
+  }
+  .btn-danger {
+    @apply btn text-danger border border-danger/40 hover:bg-danger/15;
+  }
+
+  /* Form controls -------------------------------------------------------- */
+  .field-label {
+    @apply block text-sm font-medium text-fg-muted mb-1.5;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    @apply block w-full rounded-md bg-surface text-fg
+           border border-border-strong px-3 h-10 text-sm
+           transition-colors duration-150
+           placeholder:text-fg-dim
+           focus:border-accent focus:outline-none
+           focus:ring-2 focus:ring-accent/30
+           disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .textarea { @apply h-auto py-2 min-h-[6rem]; }
+  .select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23928374' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 12px;
+    padding-right: 2.25rem;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+  .input[type="color"] {
+    @apply h-10 w-full p-1 cursor-pointer;
+  }
+  .input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.5);
+    cursor: pointer;
+  }
+
+  .checkbox {
+    @apply h-4 w-4 rounded border-border-strong bg-surface;
+    accent-color: rgb(var(--accent));
+  }
+
+  /* Card ----------------------------------------------------------------- */
+  .card {
+    @apply rounded-lg bg-surface border border-border p-6;
+    box-shadow: var(--shadow-card);
+  }
+  .card-flush { @apply rounded-lg bg-surface border border-border; }
+
+  /* Badge ---------------------------------------------------------------- */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5
+           text-xs font-medium;
+  }
+  .badge-success { @apply bg-success/15 text-success; }
+  .badge-warning { @apply bg-warning/15 text-warning; }
+  .badge-danger  { @apply bg-danger/15  text-danger; }
+  .badge-info    { @apply bg-info/15    text-info; }
+  .badge-neutral { @apply bg-surface-2  text-fg-muted; }
+
+  /* Eyebrow / overline --------------------------------------------------- */
+  .eyebrow {
+    @apply text-xs font-medium uppercase tracking-[0.14em] text-fg-dim;
+  }
+
+  /* Link ----------------------------------------------------------------- */
+  .link {
+    @apply text-accent hover:text-accent-hover underline-offset-4 hover:underline;
+  }
+
+  /* Table ---------------------------------------------------------------- */
+  .table {
+    @apply w-full text-sm;
+  }
+  .table thead th {
+    @apply text-left text-xs uppercase tracking-wider text-fg-dim
+           font-medium px-4 py-3 border-b border-border;
+  }
+  .table tbody td {
+    @apply px-4 py-3 border-b border-border text-fg;
+  }
+  .table tbody tr:hover td {
+    @apply bg-surface-2;
+  }
+
+  /* Alert ---------------------------------------------------------------- */
+  .alert {
+    @apply rounded-md border p-3 text-sm flex gap-2 items-start;
+  }
+  .alert-danger  { @apply border-danger/40  bg-danger/10  text-danger; }
+  .alert-success { @apply border-success/40 bg-success/10 text-success; }
+  .alert-info    { @apply border-info/40    bg-info/10    text-info; }
+}
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}

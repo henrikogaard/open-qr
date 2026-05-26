@@ -1,0 +1,10 @@
+node_modules
+.svelte-kit
+build
+data
+uploads
+.env
+.git
+npm-debug.log
+playwright-report
+test-results
