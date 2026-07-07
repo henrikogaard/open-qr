@@ -4,6 +4,19 @@ All notable changes to Open-QR will go here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [semver](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-07-07
+
+### Fixed
+- Restored documented first-user admin bootstrap as the default behavior, with
+  `OPENQR_AUTO_PROMOTE_FIRST_USER=false` as an explicit opt-out.
+- OTP send throttling now checks the client-address bucket before the email
+  bucket, so blocked IPs cannot consume another address's OTP quota.
+- OTP send failures now only return a generic success response for expected
+  OTP throttling; unexpected mail, database, or runtime failures are no longer
+  silently swallowed.
+- OTP send IP throttling now uses SvelteKit's trusted client-address source
+  instead of parsing the raw `X-Forwarded-For` header in the route.
+
 ## [1.2.0] — 2026-05-27
 
 ### Added

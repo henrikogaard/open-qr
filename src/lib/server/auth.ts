@@ -8,6 +8,14 @@ const HASH_KEYLEN = 32;
 const HASH_DIGEST = 'sha256';
 const otpSendAttempts = new Map<string, number[]>();
 const otpVerifyAttempts = new Map<string, number[]>();
+const otpSendIpAttempts = new Map<string, number[]>();
+
+export class OtpRateLimitError extends Error {
+  constructor() {
+    super('Too many login code requests. Please try again later.');
+    this.name = 'OtpRateLimitError';
+  }
+}
 
 function isExpired(expiresAt: string): boolean {
   const timestamp = Date.parse(expiresAt);
@@ -92,10 +100,25 @@ export function destroySession(sessionId: string): void {
   db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
 }
 
-export async function sendLoginCode(email: string): Promise<void> {
+export function resetOtpRateLimits(): void {
+  otpSendAttempts.clear();
+  otpVerifyAttempts.clear();
+  otpSendIpAttempts.clear();
+}
+
+export async function sendLoginCode(
+  email: string,
+  options?: { ip?: string | null }
+): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
+  const ip = options?.ip?.trim() || 'local';
+
+  if (!consumeRateLimit(otpSendIpAttempts, ip, 3, 10 * 60 * 1000)) {
+    throw new OtpRateLimitError();
+  }
+
   if (!consumeRateLimit(otpSendAttempts, normalizedEmail, 5, 10 * 60 * 1000)) {
-    throw new Error('Too many login code requests. Please try again later.');
+    throw new OtpRateLimitError();
   }
 
   let user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail) as { id: number } | undefined;
@@ -103,11 +126,13 @@ export async function sendLoginCode(email: string): Promise<void> {
   if (!user) {
     const result = db.prepare('INSERT INTO users (email) VALUES (?)').run(normalizedEmail);
     user = { id: Number(result.lastInsertRowid) };
-    
-    // First user becomes admin
-    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-    if (userCount.count === 1) {
-      db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+
+    const promoteFirstUser = process.env.OPENQR_AUTO_PROMOTE_FIRST_USER !== 'false';
+    if (promoteFirstUser) {
+      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+      if (userCount.count === 1) {
+        db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+      }
     }
   }
   

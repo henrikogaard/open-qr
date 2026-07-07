@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createSession, generateOTP, getUserBySession, hashSecret, sendLoginCode, verifyOTP } from './auth';
+import {
+  createSession,
+  generateOTP,
+  getUserBySession,
+  hashSecret,
+  resetOtpRateLimits,
+  sendLoginCode,
+  verifyOTP
+} from './auth';
 import { db } from '$lib/db';
 
 function createUser(email: string): number {
@@ -9,6 +17,8 @@ function createUser(email: string): number {
 
 describe('auth module', () => {
   beforeEach(() => {
+    process.env.OPENQR_AUTO_PROMOTE_FIRST_USER = 'false';
+    resetOtpRateLimits();
     db.prepare('DELETE FROM scan_logs').run();
     db.prepare('DELETE FROM abuse_reports').run();
     db.prepare('DELETE FROM qr_codes').run();
@@ -75,6 +85,49 @@ describe('auth module', () => {
     `).get('test@example.com') as { code: string };
 
     expect(row.code).not.toMatch(/^\d{6}$/);
+  });
+
+  it('should auto-promote the first user to admin by default', async () => {
+    delete process.env.OPENQR_AUTO_PROMOTE_FIRST_USER;
+    await sendLoginCode('first@example.com');
+    const row = db.prepare('SELECT is_admin FROM users WHERE email = ?').get('first@example.com') as {
+      is_admin: number;
+    };
+
+    expect(row.is_admin).toBe(1);
+  });
+
+  it('should not auto-promote the first user to admin when explicitly disabled', async () => {
+    await sendLoginCode('first@example.com');
+    const row = db.prepare('SELECT is_admin FROM users WHERE email = ?').get('first@example.com') as {
+      is_admin: number;
+    };
+
+    expect(row.is_admin).toBe(0);
+  });
+
+  it('should throttle OTP sends by IP address to reduce automated abuse', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      await expect(sendLoginCode(`user${i}@example.com`, { ip: '203.0.113.10' })).resolves.toBeUndefined();
+    }
+
+    await expect(sendLoginCode('user3@example.com', { ip: '203.0.113.10' })).rejects.toThrow(
+      'Too many login code requests. Please try again later.'
+    );
+  });
+
+  it('should not consume the email OTP quota when the IP quota is already exhausted', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      await sendLoginCode(`filler${i}@example.com`, { ip: '203.0.113.10' });
+    }
+
+    await expect(sendLoginCode('victim@example.com', { ip: '203.0.113.10' })).rejects.toThrow(
+      'Too many login code requests. Please try again later.'
+    );
+
+    for (let i = 0; i < 5; i += 1) {
+      await expect(sendLoginCode('victim@example.com', { ip: `203.0.113.${20 + i}` })).resolves.toBeUndefined();
+    }
   });
 
   it('should reject expired ISO OTPs on the same day', async () => {

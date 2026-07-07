@@ -4,7 +4,7 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 
 **Try it live: [openqr.xyz](https://openqr.xyz)** — the maintainer-run reference instance, free to use under its [Terms of Use](https://openqr.xyz/terms).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -339,6 +339,7 @@ listed in [App settings (admin panel)](#app-settings-admin-panel) further down.
 | `SMTP_USER` | – | If SMTP needs auth | SMTP username |
 | `SMTP_PASS` | – | If SMTP needs auth | SMTP password |
 | `MAIL_FROM` | – | For email | `From:` address used by whichever provider is active. Falls back to `SMTP_FROM` for backward compatibility. |
+| `OPENQR_AUTO_PROMOTE_FIRST_USER` | `true` | No | Set to `false` to disable automatic admin promotion for the first OTP user. |
 | `PROTOCOL_HEADER` | – | Behind TLS proxy | Set to `x-forwarded-proto` so `Secure` cookies are emitted when served over HTTPS through a reverse proxy. |
 | `HOST_HEADER` | – | Behind reverse proxy | Set to `x-forwarded-host` so SvelteKit knows its public hostname. |
 | `ORIGIN` | – | Sometimes | Full public origin (e.g. `https://qr.example.com`); needed if your proxy doesn't forward the right `Host` header. |
@@ -471,6 +472,9 @@ sqlite3 ./data/openqr.db "UPDATE users SET is_admin = 1 WHERE email = 'right@exa
 ```
 
 (`right@example.com` must already exist — i.e. they've logged in at least once.)
+
+Set `OPENQR_AUTO_PROMOTE_FIRST_USER=false` before first startup if you want to
+bootstrap admin access manually through SQL instead.
 
 ### Running a public-facing instance
 

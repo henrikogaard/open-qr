@@ -1,9 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { sendLoginCode } from '$lib/server/auth';
+import { OtpRateLimitError, sendLoginCode } from '$lib/server/auth';
 import { getBooleanSetting } from '$lib/server/settings';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   if (!getBooleanSetting('ENABLE_OTP_AUTH', true)) {
     throw error(403, 'OTP authentication is disabled');
   }
@@ -15,7 +15,16 @@ export const POST: RequestHandler = async ({ request }) => {
     throw error(400, 'Valid email is required');
   }
 
-  await sendLoginCode(email);
+  const ip = getClientAddress();
 
-  return json({ success: true, message: 'OTP sent' });
+  try {
+    await sendLoginCode(email, { ip });
+  } catch (err) {
+    if (!(err instanceof OtpRateLimitError)) {
+      throw err;
+    }
+    // Keep the response generic to avoid leaking whether the address exists.
+  }
+
+  return json({ success: true, message: 'If the email exists, a code has been sent.' });
 };
