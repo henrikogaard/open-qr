@@ -1,4 +1,5 @@
 import { db } from '$lib/db';
+import { appVersion } from '$lib/version';
 import { getBooleanSetting, getSetting } from './settings';
 
 export function getOperationalStatus() {
@@ -15,7 +16,7 @@ export function getOperationalStatus() {
     !getBooleanSetting('ENABLE_OTP_AUTH', true);
 
   return {
-    version: '1.2.0',
+    version: appVersion,
     generatedAt: new Date().toISOString(),
     features: {
       plausible: getBooleanSetting('ENABLE_PLAUSIBLE', false) && getSetting('PLAUSIBLE_DOMAIN', '').trim().length > 0,

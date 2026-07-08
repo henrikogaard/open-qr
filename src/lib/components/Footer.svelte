@@ -1,3 +1,7 @@
+<script>
+  import { appVersion } from '$lib/version';
+</script>
+
 <footer class="mt-24 border-t border-border bg-bg-soft">
   <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
     <div class="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
@@ -48,7 +52,7 @@
     </div>
 
     <div class="mt-10 flex flex-col items-start justify-between gap-2 border-t border-border pt-6 text-xs text-fg-dim sm:flex-row sm:items-center">
-      <p class="font-mono">Open-QR · v1.2.0 · self-hosted</p>
+      <p class="font-mono">Open-QR · v{appVersion} · self-hosted</p>
       <p>Made in Europe</p>
     </div>
   </div>
