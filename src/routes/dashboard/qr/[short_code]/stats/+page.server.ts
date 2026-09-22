@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { getQRCode } from '$lib/server/qr';
+import { getQRCode, sanitizeQrCode } from '$lib/server/qr';
 import { buildShortUrl } from '$lib/server/urls';
 import { db } from '$lib/db';
 
@@ -10,14 +10,21 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   if (!qr) throw error(404, 'QR code not found');
   if (qr.user_id !== locals.user.id && !locals.user.isAdmin) throw error(403, 'Access denied');
 
+  // Human analytics: bot hits stay in scan_logs but are excluded here
+  // (NULL device_class = pre-bot-tracking rows; treat as human). The device
+  // breakdown keeps bots so the split stays visible.
   const recentScans = db
-    .prepare('SELECT timestamp, country, device_class FROM scan_logs WHERE qr_code_id = ? ORDER BY timestamp DESC LIMIT 100')
+    .prepare(
+      `SELECT timestamp, country, device_class FROM scan_logs
+       WHERE qr_code_id = ? AND (device_class IS NULL OR device_class != 'bot')
+       ORDER BY timestamp DESC LIMIT 100`
+    )
     .all(qr.id);
   const dailyScans = db
     .prepare(
       `SELECT date(timestamp) AS date, COUNT(*) AS count
        FROM scan_logs
-       WHERE qr_code_id = ?
+       WHERE qr_code_id = ? AND (device_class IS NULL OR device_class != 'bot')
        GROUP BY date(timestamp)
        ORDER BY date DESC
        LIMIT 30`
@@ -27,7 +34,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     .prepare(
       `SELECT country, COUNT(*) AS count
        FROM scan_logs
-       WHERE qr_code_id = ? AND country IS NOT NULL
+       WHERE qr_code_id = ? AND country IS NOT NULL AND (device_class IS NULL OR device_class != 'bot')
        GROUP BY country
        ORDER BY count DESC`
     )
@@ -43,7 +50,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     .all(qr.id);
 
   return {
-    qr,
+    qr: sanitizeQrCode(qr),
     shortUrl: buildShortUrl(params.short_code, url.origin),
     stats: { recentScans, dailyScans, byCountry, byDevice, totalScans: qr.scan_count }
   };

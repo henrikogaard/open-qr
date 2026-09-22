@@ -27,6 +27,8 @@
   let previewing = false;
   let message = '';
   let errorMessage = '';
+  /** Earliest selectable expiry (client clock), set on mount to avoid SSR mismatch. */
+  let minExpiresAt = '';
 
   function buildStyle() {
     return {
@@ -97,6 +99,9 @@
 
   onMount(() => {
     mounted = true;
+    minExpiresAt = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
     runPreview();
   });
 
@@ -151,6 +156,10 @@
 
 <Navbar user={data.user} />
 
+<svelte:head>
+  <title>Edit /go/{data.qr.short_code} — Open-QR</title>
+</svelte:head>
+
 <main class="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
   <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
     <div>
@@ -189,7 +198,7 @@
       <div class="grid gap-4 md:grid-cols-2">
         <div>
           <label for="edit-expires-at" class="field-label">Expires at</label>
-          <input id="edit-expires-at" type="datetime-local" bind:value={expiresAt} class="input" />
+          <input id="edit-expires-at" type="datetime-local" bind:value={expiresAt} min={minExpiresAt} class="input" />
         </div>
         <div>
           <label for="edit-password" class="field-label">New password</label>
@@ -266,10 +275,10 @@
       {/if}
 
       {#if message}
-        <div class="alert alert-success"><span>{message}</span></div>
+        <div class="alert alert-success" role="status"><span>{message}</span></div>
       {/if}
       {#if errorMessage}
-        <div class="alert alert-danger"><span>{errorMessage}</span></div>
+        <div class="alert alert-danger" role="alert"><span>{errorMessage}</span></div>
       {/if}
 
       <button type="submit" disabled={saving} class="btn-primary btn-lg w-full">

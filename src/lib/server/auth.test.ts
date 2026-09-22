@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createSession,
+  destroyAllSessions,
   generateOTP,
   getUserBySession,
   hashSecret,
+  listSessions,
   resetOtpRateLimits,
   sendLoginCode,
   verifyOTP
@@ -44,6 +46,30 @@ describe('auth module', () => {
     const user = getUserBySession(sessionId);
     expect(user).toBeDefined();
     expect(user?.id).toBe(userId);
+  });
+
+  it('should record the user agent and list sessions with a current flag', () => {
+    const userId = createUser('sessions@example.com');
+    const desktop = createSession(userId, 'Mozilla/5.0 Macintosh Chrome/120');
+    createSession(userId, 'Mozilla/5.0 iPhone Safari/605');
+
+    const sessions = listSessions(userId, desktop);
+    expect(sessions).toHaveLength(2);
+    expect(sessions.filter((s) => s.current)).toHaveLength(1);
+    expect(sessions.map((s) => s.deviceClass).sort()).toEqual(['desktop', 'mobile']);
+    // Raw session ids must not leak into the listing payload.
+    expect(JSON.stringify(sessions)).not.toContain(desktop);
+  });
+
+  it('should destroy all sessions for a user (log out everywhere)', () => {
+    const userId = createUser('wipe@example.com');
+    const a = createSession(userId);
+    const b = createSession(userId);
+
+    destroyAllSessions(userId);
+
+    expect(getUserBySession(a)).toBeNull();
+    expect(getUserBySession(b)).toBeNull();
   });
 
   it('should invalidate expired sessions', () => {

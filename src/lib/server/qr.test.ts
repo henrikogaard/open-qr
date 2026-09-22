@@ -103,8 +103,28 @@ describe('qr module', () => {
   });
 
   it('should generate PNG QR output', async () => {
-    const png = await generateQRImage('https://example.com');
+    const png = await generateQRImage('https://example.com', { borderSize: 'medium' });
 
     expect(png).toMatch(/^data:image\/png;base64,/);
+
+    // Decode enough of the PNG to prove it rasterized at the intrinsic SVG
+    // size (400px code + 20px border on each side) with real image content.
+    const raw = Buffer.from(png.split(',')[1]!, 'base64');
+    expect(raw.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe(true);
+    expect(raw.readUInt32BE(16)).toBe(440); // IHDR width
+    expect(raw.readUInt32BE(20)).toBe(440); // IHDR height
+    expect(raw.length).toBeGreaterThan(5_000);
+  });
+
+  it('should render styled PNGs (template, border style, center text) without error', async () => {
+    const png = await generateQRImage('https://example.com/styled', {
+      template: 'colorful',
+      borderStyle: 'dashed',
+      centerType: 'text',
+      centerText: 'DEMO',
+      centerTextColor: '#d65d0e'
+    });
+    expect(png).toMatch(/^data:image\/png;base64,/);
+    expect(png.length).toBeGreaterThan(5_000);
   });
 });

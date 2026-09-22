@@ -6,6 +6,8 @@ import { buildShortUrl } from '$lib/server/urls';
 import { parseCsv } from '$lib/server/csv';
 import { assertSafeTargetUrl } from '$lib/server/url-safety';
 import { getCampaign } from '$lib/server/campaigns';
+import { CLAIM_COOKIE, claimCookieOptions, newClaimToken } from '$lib/server/claims';
+import { shouldSecureCookie } from '$lib/server/cookie-secure';
 
 // Caps on a single bulk request. Adapter-node's BODY_SIZE_LIMIT (default
 // 512 KB) provides a hard backstop; these limits are the friendly errors
@@ -25,7 +27,7 @@ const MAX_BULK_ROWS = 1000;
  *
  * Returns per-row results so the caller can show partial-success state.
  */
-export const POST: RequestHandler = async ({ request, locals, url }) => {
+export const POST: RequestHandler = async ({ request, locals, url, cookies, platform }) => {
   const allowAnonymous = getBooleanSetting('ENABLE_ANONYMOUS_CREATION', true);
   if (!locals.user && !allowAnonymous) {
     throw error(401, 'Authentication required');
@@ -45,6 +47,17 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
   }
   if (rows.length - 1 > MAX_BULK_ROWS) {
     throw error(400, `Too many rows (${rows.length - 1}); max ${MAX_BULK_ROWS} per request`);
+  }
+
+  // One claim token covers the whole anonymous import, so a later login in
+  // this browser adopts every row it created in one action.
+  let claimToken: string | null = null;
+  if (!locals.user) {
+    claimToken = cookies.get(CLAIM_COOKIE) ?? null;
+    if (!claimToken) {
+      claimToken = newClaimToken();
+      cookies.set(CLAIM_COOKIE, claimToken, claimCookieOptions(shouldSecureCookie(url, platform)));
+    }
   }
 
   const header = rows[0].map((h) => h.trim());
@@ -100,7 +113,8 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
         undefined,
         expiresAt,
         password,
-        campaignId
+        campaignId,
+        claimToken
       );
       results.push({
         row: i + 1,

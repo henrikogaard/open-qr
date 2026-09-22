@@ -1,11 +1,12 @@
 import QRCode from 'qrcode';
-import { createCanvas, loadImage } from 'canvas';
+import { Resvg } from '@resvg/resvg-js';
 import { db } from '$lib/db';
 import { nanoid } from 'nanoid';
 import { isAllowedScheme, isBlacklisted } from './blacklist';
 import { hashSecret, verifySecret } from './auth';
 import { getNumberSetting } from './settings';
 import { fetchPublicImage } from './net-guard';
+import { hashClaimToken } from './claims';
 
 function assertUsableTargetUrl(url: string): void {
   const scheme = isAllowedScheme(url);
@@ -117,108 +118,16 @@ function buildMatrix(targetUrl: string, ec: QRCode.QRCodeErrorCorrectionLevel): 
   };
 }
 
-function drawModule(
-  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  x: number,
-  y: number,
-  s: number,
-  shape: ModuleShape
-): void {
-  switch (shape) {
-    case 'minimal': {
-      const pad = s * 0.12;
-      ctx.fillRect(x + pad, y + pad, s - pad * 2, s - pad * 2);
-      return;
-    }
-    case 'rounded': {
-      const r = s * 0.35;
-      ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.arcTo(x + s, y, x + s, y + s, r);
-      ctx.arcTo(x + s, y + s, x, y + s, r);
-      ctx.arcTo(x, y + s, x, y, r);
-      ctx.arcTo(x, y, x + s, y, r);
-      ctx.closePath();
-      ctx.fill();
-      return;
-    }
-    default:
-      ctx.fillRect(x, y, s, s);
-  }
-}
-
-function applyFill(
-  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  fill: ModuleFill,
-  width: number,
-  height: number
-): void {
-  if (fill.type === 'gradient') {
-    const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, fill.from);
-    grad.addColorStop(1, fill.to);
-    ctx.fillStyle = grad;
-  } else {
-    ctx.fillStyle = fill.color;
-  }
-}
-
 export async function generateQRImage(
   targetUrl: string,
   style: QRStyle = {}
 ): Promise<string> {
-  assertEncodableUrl(targetUrl);
-
-  const ec = resolveErrorCorrection(style);
-  const tpl = resolveTemplate(style);
-  const baseSize = 400;
-  const borderSize = getBorderPixels(style.borderSize || 'medium');
-  const totalSize = baseSize + borderSize * 2;
-
-  const canvas = createCanvas(totalSize, totalSize);
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = tpl.bg;
-  ctx.fillRect(0, 0, totalSize, totalSize);
-
-  const matrix = buildMatrix(targetUrl, ec);
-  const margin = 2;
-  const moduleSize = baseSize / (matrix.size + margin * 2);
-  const originX = borderSize;
-  const originY = borderSize;
-
-  applyFill(ctx, tpl.fill, totalSize, totalSize);
-
-  for (let row = 0; row < matrix.size; row++) {
-    for (let col = 0; col < matrix.size; col++) {
-      if (!matrix.isDark(col, row)) continue;
-      const x = originX + (col + margin) * moduleSize;
-      const y = originY + (row + margin) * moduleSize;
-      drawModule(ctx, x, y, moduleSize, tpl.shape);
-    }
-  }
-
-  if (style.borderSize !== 'none' && borderSize > 0) {
-    ctx.strokeStyle = tpl.border;
-    ctx.lineWidth = 4;
-
-    if (style.borderStyle === 'dashed') {
-      ctx.setLineDash([10, 10]);
-    } else if (style.borderStyle === 'dotted') {
-      ctx.setLineDash([5, 5]);
-    }
-
-    ctx.strokeRect(borderSize / 2, borderSize / 2, baseSize + borderSize, baseSize + borderSize);
-    ctx.setLineDash([]);
-  }
-
-  if (style.centerType === 'image' && style.centerImageUrl) {
-    await addCenterImage(ctx, canvas, style.centerImageUrl);
-  } else if (style.centerType === 'text' && style.centerText) {
-    addCenterText(ctx, canvas, style.centerText, style.centerTextColor || '#000000', tpl.bg);
-  }
-
-  return canvas.toDataURL('image/png');
+  // Rendered by rasterizing generateQRSVG's output: one layout implementation
+  // for both formats (previously canvas and SVG drifted independently), and
+  // no native cairo/pango stack — resvg ships prebuilt binaries.
+  const svg = await generateQRSVG(targetUrl, style);
+  const png = new Resvg(svg).render().asPng();
+  return `data:image/png;base64,${png.toString('base64')}`;
 }
 
 function svgModule(x: number, y: number, s: number, shape: ModuleShape): string {
@@ -347,44 +256,6 @@ function getBorderPixels(size: string): number {
   }
 }
 
-async function addCenterImage(ctx: any, canvas: any, imageUrl: string): Promise<void> {
-  try {
-    const size = Math.min(canvas.width, canvas.height) * 0.2;
-    const x = (canvas.width - size) / 2;
-    const y = (canvas.height - size) / 2;
-
-    // Fetched through the SSRF guard and decoded from the buffer — passing
-    // the URL straight to loadImage would let it fetch local/internal hosts
-    // with no scheme, size, or redirect checks.
-    let img;
-    if (imageUrl.startsWith('data:')) {
-      if (imageUrl.length > Math.ceil(INLINE_IMAGE_MAX_BYTES / 0.75)) return;
-      img = await loadImage(imageUrl);
-    } else {
-      const { buffer } = await fetchPublicImage(imageUrl, { maxBytes: INLINE_IMAGE_MAX_BYTES });
-      img = await loadImage(buffer);
-    }
-    ctx.drawImage(img, x, y, size, size);
-  } catch {
-    // Silently fail if image can't be loaded
-  }
-}
-
-function addCenterText(ctx: any, canvas: any, text: string, color: string, bgColor: string): void {
-  const size = Math.min(canvas.width, canvas.height) * 0.2;
-  const x = canvas.width / 2;
-  const y = canvas.height / 2;
-
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(x - size / 2, y - size / 3, size, size / 1.5);
-
-  ctx.fillStyle = color;
-  ctx.font = `bold ${size / 3}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text.substring(0, 10), x, y);
-}
-
 export function createQRCode(
   targetUrl: string,
   userId: number | null,
@@ -392,7 +263,8 @@ export function createQRCode(
   shortCode?: string,
   expiresAt?: string,
   password?: string,
-  campaignId?: number | null
+  campaignId?: number | null,
+  claimToken?: string | null
 ): { shortCode: string } {
   assertUsableTargetUrl(targetUrl);
   assertUnderQuota(userId);
@@ -404,8 +276,8 @@ export function createQRCode(
       short_code, target_url, user_id, expires_at, password_hash,
       template, foreground_color, background_color, border_size, border_style,
       center_type, center_image_url, center_text, center_text_color, error_correction,
-      campaign_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      campaign_id, claim_token
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     code,
     targetUrl,
@@ -422,7 +294,10 @@ export function createQRCode(
     style.centerText || null,
     style.centerTextColor || '#000000',
     style.errorCorrection || 'M',
-    campaignId || null
+    campaignId || null,
+    // Only meaningful for anonymous creates (userId null): lets the creating
+    // browser adopt these rows into an account later.
+    !userId && claimToken ? hashClaimToken(claimToken) : null
   );
   
   return { shortCode: code };

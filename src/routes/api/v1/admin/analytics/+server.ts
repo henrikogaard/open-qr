@@ -7,8 +7,10 @@ export const GET: RequestHandler = async ({ locals }) => {
     throw error(403, 'Admin access required');
   }
   
-  const totalScans = db.prepare('SELECT COUNT(*) as count FROM scan_logs').get() as { count: number };
-  const todayScans = db.prepare(`SELECT COUNT(*) as count FROM scan_logs WHERE date(timestamp) = date('now')`).get() as { count: number };
+  // Human scans only in the headline numbers (matches scan_count semantics);
+  // the device breakdown below keeps bots so their share stays visible.
+  const totalScans = db.prepare(`SELECT COUNT(*) as count FROM scan_logs WHERE device_class IS NULL OR device_class != 'bot'`).get() as { count: number };
+  const todayScans = db.prepare(`SELECT COUNT(*) as count FROM scan_logs WHERE date(timestamp) = date('now') AND (device_class IS NULL OR device_class != 'bot')`).get() as { count: number };
   const totalQRs = db.prepare('SELECT COUNT(*) as count FROM qr_codes').get() as { count: number };
   const activeQRs = db.prepare('SELECT COUNT(*) as count FROM qr_codes WHERE is_active = 1').get() as { count: number };
   
@@ -22,7 +24,7 @@ export const GET: RequestHandler = async ({ locals }) => {
   const countries = db.prepare(`
     SELECT country, COUNT(*) as count
     FROM scan_logs
-    WHERE country IS NOT NULL
+    WHERE country IS NOT NULL AND (device_class IS NULL OR device_class != 'bot')
     GROUP BY country
     ORDER BY count DESC
     LIMIT 10

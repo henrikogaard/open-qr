@@ -19,6 +19,20 @@
   let newKeyName = '';
   let issuingKey = false;
   let revealedToken = '';
+  let adopting = false;
+
+  async function adoptClaimed() {
+    adopting = true;
+    try {
+      await fetch('/api/v1/qr/adopt', { method: 'POST' });
+      window.location.reload();
+    } finally {
+      adopting = false;
+    }
+  }
+  let copied = false;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let copiedTimer;
 
   onMount(async () => {
     await Promise.all([loadQRCodes(), loadCampaigns(), loadApiKeys()]);
@@ -74,6 +88,9 @@
   async function copyToken() {
     try {
       await navigator.clipboard.writeText(revealedToken);
+      copied = true;
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => (copied = false), 1500);
     } catch {
       /* ignore */
     }
@@ -108,6 +125,10 @@
   });
 </script>
 
+<svelte:head>
+  <title>Dashboard — Open-QR</title>
+</svelte:head>
+
 <Navbar user={data.user} />
 
 <main class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -117,11 +138,30 @@
       <h1 class="mt-1 text-3xl font-semibold tracking-tight text-fg">My QR codes</h1>
       <p class="mt-1 text-sm text-fg-muted">Manage, edit and audit every code you've generated.</p>
     </div>
-    <a href="/" class="btn-primary">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-      Create new
-    </a>
+    <div class="flex flex-col items-stretch gap-2 sm:items-end">
+      <a href="/" class="btn-primary">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        Create new
+      </a>
+      <div class="flex gap-3 text-xs">
+        <a href="/api/v1/export?type=codes" class="link">Export codes CSV</a>
+        <span aria-hidden="true" class="text-fg-dim">·</span>
+        <a href="/api/v1/export?type=scans" class="link">Export scans CSV</a>
+      </div>
+    </div>
   </header>
+
+  {#if data.adoptableCount > 0}
+    <div class="alert alert-info mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" role="status">
+      <span>
+        <strong>{data.adoptableCount}</strong> QR {data.adoptableCount === 1 ? 'code was' : 'codes were'} created in this browser while logged out.
+        Add {data.adoptableCount === 1 ? 'it' : 'them'} to your account?
+      </span>
+      <button type="button" on:click={adoptClaimed} disabled={adopting} class="btn-primary btn-sm shrink-0">
+        {adopting ? 'Adding…' : `Add to my account`}
+      </button>
+    </div>
+  {/if}
 
   <section class="mb-8 grid gap-4 lg:grid-cols-3">
     {#each campaigns as campaign}
@@ -200,11 +240,11 @@
     </div>
 
     {#if revealedToken}
-      <div class="alert alert-info mb-5 flex-col items-start gap-3">
+      <div class="alert alert-info mb-5 flex-col items-start gap-3" role="status">
         <p class="font-medium">Copy this token now — it will not be shown again.</p>
         <div class="flex w-full items-stretch gap-2">
           <code class="flex-1 truncate rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-xs text-fg">{revealedToken}</code>
-          <button on:click={copyToken} class="btn-secondary btn-sm shrink-0">Copy</button>
+          <button on:click={copyToken} class="btn-secondary btn-sm shrink-0" aria-live="polite">{copied ? 'Copied' : 'Copy'}</button>
           <button on:click={() => (revealedToken = '')} class="btn-ghost btn-sm shrink-0">Dismiss</button>
         </div>
       </div>

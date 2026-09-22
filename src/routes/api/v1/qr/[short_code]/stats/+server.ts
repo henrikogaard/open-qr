@@ -14,10 +14,12 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     throw error(403, 'Access denied');
   }
   
+  // Human analytics: bot hits stay in scan_logs but are excluded here
+  // (NULL device_class = pre-bot-tracking rows; treat as human).
   const scans = db.prepare(`
     SELECT timestamp, country, device_class
     FROM scan_logs
-    WHERE qr_code_id = ?
+    WHERE qr_code_id = ? AND (device_class IS NULL OR device_class != 'bot')
     ORDER BY timestamp DESC
     LIMIT 100
   `).all(qr.id);
@@ -25,7 +27,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   const dailyScans = db.prepare(`
     SELECT date(timestamp) as date, COUNT(*) as count
     FROM scan_logs
-    WHERE qr_code_id = ?
+    WHERE qr_code_id = ? AND (device_class IS NULL OR device_class != 'bot')
     GROUP BY date(timestamp)
     ORDER BY date DESC
     LIMIT 30
@@ -34,7 +36,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   const byCountry = db.prepare(`
     SELECT country, COUNT(*) as count
     FROM scan_logs
-    WHERE qr_code_id = ? AND country IS NOT NULL
+    WHERE qr_code_id = ? AND country IS NOT NULL AND (device_class IS NULL OR device_class != 'bot')
     GROUP BY country
     ORDER BY count DESC
   `).all(qr.id);

@@ -2,7 +2,9 @@ FROM node:24-alpine AS build
 
 WORKDIR /app
 
-RUN apk add --no-cache python3 make g++ cairo-dev pango-dev giflib-dev jpeg-dev
+# Native modules (better-sqlite3) still need a toolchain to build if no
+# prebuilt binary matches; resvg-js and everything else ship prebuilts.
+RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
 RUN npm ci
@@ -15,13 +17,14 @@ FROM node:24-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache cairo pango giflib jpeg curl
+# curl: container health checks. font-dejavu: system font so resvg can
+# rasterize the QR center-text overlay (replaces the cairo/pango stack the
+# old canvas renderer needed — ~200MB fewer image deps).
+RUN apk add --no-cache curl font-dejavu
 
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
-# Migration SQL is read at runtime via fs.readdirSync(cwd + '/src/lib/db/migrations').
-COPY --from=build /app/src/lib/db/migrations ./src/lib/db/migrations
 
 EXPOSE 3000
 

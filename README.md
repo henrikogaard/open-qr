@@ -59,6 +59,9 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 - **Human verification**: Built-in proof-of-work check on the login form — no third-party widget, no cookies, configurable in the admin panel
 - **Anonymous mode**: Allow QR generation without authentication (configurable)
 - **Session management**: 30-day HTTP-only cookies; expired sessions and spent codes are swept automatically
+- **Active session list**: see signed-in devices and log out everywhere
+- **Anonymous code claiming**: codes created while logged out can be added to your account when you sign in from the same browser
+- **Data export**: download your QR codes and scan logs as CSV from the dashboard
 - **Stale account purge**: accounts with no QR codes, API keys, or sessions are deleted after 30 days (configurable, admins exempt)
 - **First-user admin**: The first person to register automatically becomes administrator
 
@@ -540,16 +543,31 @@ small and direct abuse handling through a real inbox you read.
 ### Backup
 
 The only stateful files are `data/openqr.db` plus its SQLite WAL/SHM
-sidecars (`-wal`, `-shm`). To take a consistent snapshot while the server
-is running:
+sidecars (`-wal`, `-shm`). The bundled backup script takes a consistent
+snapshot while the server is running (WAL-aware online backup, no locking
+of live traffic):
+
+```sh
+# writes data/backups/openqr-<timestamp>.db
+npm run db:backup
+
+# or an explicit destination (DATABASE_URL selects the source)
+node scripts/db-backup.mjs /path/to/backup.db
+```
+
+Manual equivalent, e.g. from a host against a bind-mounted volume:
 
 ```sh
 sqlite3 data/openqr.db ".backup data/backup-$(date +%F).db"
 ```
 
-This is safe to run on the live database (SQLite handles the locking) and
-produces a single self-contained file you can copy off-host. Restore by
-stopping the server and replacing `openqr.db`.
+Both are safe on the live database and produce a single self-contained file
+you can copy off-host. Restore by stopping the server, replacing
+`openqr.db` (removing any stale `-wal`/`-shm` siblings), and restarting.
+Verify a backup occasionally with
+`sqlite3 <backup.db> "PRAGMA integrity_check;"`. For continuous
+point-in-time replication off-host, run [Litestream](https://litestream.io)
+against the same volume.
 
 ---
 
@@ -647,6 +665,35 @@ curl -X POST https://your-host/api/v1/qr \
   -H "Content-Type: application/json" \
   -d '{"targetUrl": "https://example.com", "style": {"template": "rounded"}}'
 ```
+
+### Sessions
+
+`GET /api/v1/auth/sessions` — list the account's active sessions (device
+class, created/expiry). Raw session ids are never returned; the cookie's
+session is flagged `current`.
+
+```bash
+curl https://your-host/api/v1/auth/sessions -H "Authorization: Bearer oqk_…"
+```
+
+`DELETE /api/v1/auth/sessions` — **log out everywhere**: revokes every
+session for the account, including the caller's.
+
+### Adopting anonymous codes
+
+Codes created while logged out are tagged with a cookie-held claim token.
+After signing in from the same browser, the dashboard offers to add them to
+the account; the API equivalent:
+
+```bash
+curl -X POST https://your-host/api/v1/qr/adopt   -H "Authorization: Bearer oqk_…" -b "openqr_claims=<cookie value>"
+```
+
+### Data export
+
+`GET /api/v1/export?type=codes` (or `type=scans`) — CSV download of your QR
+codes or the raw scan log rows for your codes. Also linked from the
+dashboard header.
 
 ### Rate limiting
 
@@ -1067,7 +1114,7 @@ Future features planned for upcoming releases:
 - [ ] **Webhooks**: Notify external services on scan events
 - [ ] **QR code frames**: Decorative frames around QR codes
 - [ ] **Multi-language**: i18n support for multiple languages
-- [ ] **Bulk CSV export**: Download all QR codes as CSV
+- [x] **Bulk CSV export**: Download your QR codes and scan logs as CSV (dashboard → Export CSV)
 - [ ] **QR code scanner**: Built-in scanner in the web app
 
 ---

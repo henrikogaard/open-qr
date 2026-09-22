@@ -65,3 +65,15 @@ export function parseCsv(input: string): string[][] {
 
   return rows;
 }
+
+/**
+ * RFC 4180 serialization — the export counterpart of parseCsv. Fields are
+ * quoted only when they contain a separator, quote, or line break.
+ */
+export function toCsv(rows: (string | number | boolean | null)[][]): string {
+  const escape = (value: string | number | boolean | null): string => {
+    const s = value === null || value === undefined ? '' : String(value);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return rows.map((row) => row.map(escape).join(',')).join('\r\n') + '\r\n';
+}
