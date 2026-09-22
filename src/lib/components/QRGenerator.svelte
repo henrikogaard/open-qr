@@ -32,6 +32,8 @@
   let loading = false;
   let previewing = false;
   let error = '';
+  /** Earliest selectable expiry (client clock), set on mount to avoid SSR mismatch. */
+  let minExpiresAt = '';
 
   /** @type {Array<{ id: number; name: string; template: string; foregroundColor: string; backgroundColor: string; borderSize: string; borderStyle: string; centerType: string; centerText: string; centerTextColor: string; errorCorrection: string }>} */
   let presets = [];
@@ -54,6 +56,9 @@
   $: needsTerms = !termsAccepted && termsVersion !== '';
 
   onMount(() => {
+    minExpiresAt = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
     if (isAuthed) {
       termsAccepted = user?.termsAcceptedVersion === termsVersion;
       loadPresets();
@@ -265,7 +270,9 @@
     debounceHandle = setTimeout(runPreview, 200);
   }
 
-  // Live preview: re-run whenever any style/url input changes.
+  // Live preview: re-run whenever any style/url input changes — including the
+  // terms gate, so accepting consent immediately renders a pending preview
+  // (and un-accepting clears one).
   $: previewDeps = [
     targetUrl,
     template,
@@ -276,7 +283,8 @@
     centerType,
     centerText,
     centerTextColor,
-    errorCorrection
+    errorCorrection,
+    needsTerms
   ];
   $: if (previewDeps) schedulePreview();
 
@@ -284,6 +292,13 @@
     clearTimeout(debounceHandle);
     inflight?.abort();
   });
+
+  function focusTerms() {
+    const el = document.getElementById('terms-accept');
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.focus();
+  }
 
   async function generate() {
     const url = normalizeUrl(targetUrl);
@@ -342,7 +357,7 @@
         <div class="flex items-center justify-between">
           <p class="eyebrow">Reuse styling</p>
           {#if presetMessage}
-            <span class="text-xs text-success">{presetMessage}</span>
+            <span class="text-xs text-success" role="status">{presetMessage}</span>
           {/if}
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
@@ -514,7 +529,7 @@
       <div class="grid gap-4 sm:grid-cols-2">
         <div>
           <label for="expires-at" class="field-label">Expires at <span class="text-fg-dim font-normal">(optional)</span></label>
-          <input id="expires-at" type="datetime-local" bind:value={expiresAt} class="input" />
+          <input id="expires-at" type="datetime-local" bind:value={expiresAt} min={minExpiresAt} class="input" />
         </div>
         <div>
           <label for="qr-password" class="field-label">Password <span class="text-fg-dim font-normal">(optional)</span></label>
@@ -525,6 +540,7 @@
       {#if termsVersion}
         <label class="flex items-start gap-2.5 text-sm text-fg">
           <input
+            id="terms-accept"
             type="checkbox"
             checked={termsAccepted}
             on:change={onTermsToggle}
@@ -539,7 +555,7 @@
       {/if}
 
       {#if error}
-        <div class="alert alert-danger">
+        <div class="alert alert-danger" role="alert">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" class="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
           <span>{error}</span>
         </div>
@@ -574,6 +590,11 @@
     </div>
     {#if previewUrl}
       <QRPreview dataUrl={previewUrl} shortUrl={shortUrl} {svg} />
+      {#if shortUrl && !isAuthed}
+        <p class="alert alert-info mt-4 text-xs" role="status">
+          This code isn't tied to an account — sign in first and codes you generate stay manageable in your dashboard.
+        </p>
+      {/if}
     {:else}
       <div class="grid aspect-square place-items-center rounded-md border border-dashed border-border-strong bg-bg-soft text-center">
         <div class="px-4">
@@ -582,8 +603,14 @@
               <path d="M3 3h7v7H3V3zm2 2v3h3V5H5zm9-2h7v7h-7V3zm2 2v3h3V5h-3zM3 14h7v7H3v-7zm2 2v3h3v-3H5zm9-2h2v2h-2v-2zm4 0h3v2h-2v1h-1v-3zm-4 4h2v3h-2v-3zm4 1h3v2h-3v-2zm-2-1h2v2h-2v-2z"/>
             </svg>
           </div>
-          <p class="mt-3 text-sm font-medium text-fg">Your QR will appear here</p>
-          <p class="mt-1 text-xs text-fg-dim">Type a URL — the preview updates as you edit.</p>
+          {#if targetUrl && needsTerms}
+            <p class="mt-3 text-sm font-medium text-fg">Almost there</p>
+            <p class="mt-1 text-xs text-fg-dim">Accept the Terms of Use below to see the live preview.</p>
+            <button type="button" class="link mt-2 text-xs" on:click={focusTerms}>Take me to it</button>
+          {:else}
+            <p class="mt-3 text-sm font-medium text-fg">Your QR will appear here</p>
+            <p class="mt-1 text-xs text-fg-dim">Type a URL — the preview updates as you edit.</p>
+          {/if}
         </div>
       </div>
     {/if}

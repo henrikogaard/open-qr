@@ -84,7 +84,7 @@ https://example.org,rounded,#1a73e8
     </div>
 
     {#if errorMessage}
-      <div class="alert alert-danger"><span>{errorMessage}</span></div>
+      <div class="alert alert-danger" role="alert"><span>{errorMessage}</span></div>
     {/if}
 
     <button type="submit" disabled={busy || !csvText.trim()} class="btn-primary btn-lg w-full">

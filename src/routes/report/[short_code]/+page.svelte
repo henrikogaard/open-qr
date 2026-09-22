@@ -42,7 +42,7 @@
           <input id="email" name="email" type="email" class="input" />
         </div>
         {#if form?.error}
-          <div class="alert alert-danger">{form.error}</div>
+          <div class="alert alert-danger" role="alert">{form.error}</div>
         {/if}
         <button class="btn-primary w-full">Submit report</button>
       </form>

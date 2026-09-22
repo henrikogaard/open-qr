@@ -123,7 +123,8 @@
         <p class="eyebrow">Generate</p>
         <h2 class="mt-2 text-3xl font-semibold tracking-tight text-fg">Build one now.</h2>
         <p class="mt-2 max-w-xl text-fg-muted">
-          No sign-up required — anonymous codes are enabled by default. Sign in to manage and edit them later.
+          No sign-up required — anonymous codes are enabled by default. Sign in first and
+          everything you generate stays manageable in your dashboard.
         </p>
       </div>
       {#if !data?.user}

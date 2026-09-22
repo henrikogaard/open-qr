@@ -34,7 +34,7 @@
     <p class="eyebrow">Configuration</p>
     <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-2">
       <div><dt class="text-fg-dim">Version</dt><dd class="font-mono text-fg">{data.status.version}</dd></div>
-      <div><dt class="text-fg-dim">Generated</dt><dd class="font-mono text-fg">{data.status.generatedAt}</dd></div>
+      <div><dt class="text-fg-dim">Generated</dt><dd class="font-mono text-fg">{new Date(data.status.generatedAt).toLocaleString()}</dd></div>
       <div><dt class="text-fg-dim">Plausible</dt><dd class="text-fg">{data.status.features.plausible ? 'Enabled' : 'Disabled'}</dd></div>
       <div><dt class="text-fg-dim">Threat intelligence</dt><dd class="text-fg">{data.status.features.threatIntel ? 'Enabled' : 'Disabled'}</dd></div>
     </dl>
