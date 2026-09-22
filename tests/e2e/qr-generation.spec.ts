@@ -1,6 +1,6 @@
 import { test, expect, request as apiRequest } from '@playwright/test';
 import Database from 'better-sqlite3';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 function db() {
   return new Database(process.env.DATABASE_URL || './data/openqr.db');
@@ -67,6 +67,28 @@ test('persisted QR exposes a short URL', async ({ page }) => {
   await expect(page.locator('a[href*="/go/"]').first()).toBeVisible({ timeout: 10000 });
 });
 
+test('API responses never expose password_hash', async ({ baseURL }) => {
+  const { sessionId } = createUserSession(uniqueEmail('sanit'));
+  const authed = await authedContext(sessionId, baseURL!);
+
+  const created = await authed.post('/api/v1/qr', {
+    data: { targetUrl: 'https://example.com/secret', password: 'hunter2' }
+  });
+  expect(created.ok()).toBeTruthy();
+  const { data } = (await created.json()) as { success: boolean; data: { shortCode: string } };
+  expect(JSON.stringify(created)).not.toContain('password_hash');
+
+  for (const url of [`/api/v1/qr/${data.shortCode}`, '/api/v1/qr']) {
+    const res = await authed.get(url);
+    expect(res.ok()).toBeTruthy();
+    const text = JSON.stringify(await res.json());
+    expect(text).not.toContain('password_hash');
+    expect(text).not.toContain('hunter2');
+  }
+
+  await authed.dispose();
+});
+
 test('terms gate blocks generation until accepted', async ({ page }) => {
   await page.goto('/');
   await page.fill('input[type="url"]', 'https://example.com/terms-gate');
@@ -100,6 +122,52 @@ test('dashboard edit page loads with current values', async ({ page }) => {
 test('login page is reachable', async ({ page }) => {
   await page.goto('/login');
   await expect(page.locator('input[type="email"]')).toBeVisible();
+});
+
+test('OTP send rejects requests without a solved captcha', async ({ request }) => {
+  const response = await request.post('/api/v1/auth/otp/send', {
+    data: { email: uniqueEmail('nocaptcha') }
+  });
+  expect(response.status()).toBe(400);
+  const body = (await response.json()) as { message?: string };
+  expect(body.message).toContain('Captcha');
+});
+
+test('OTP send accepts a solved proof-of-work challenge', async ({ request }) => {
+  const challengeRes = await request.get('/api/v1/auth/captcha');
+  const challenge = (await challengeRes.json()) as {
+    success: boolean;
+    data: { payload: string; salt: string; challenge: string; maxnumber: number };
+  };
+  expect(challenge.success).toBe(true);
+
+  let solution = -1;
+  for (let n = 0; n < challenge.data.maxnumber; n++) {
+    if (createHash('sha256').update(challenge.data.salt + n).digest('hex') === challenge.data.challenge) {
+      solution = n;
+      break;
+    }
+  }
+  expect(solution).toBeGreaterThanOrEqual(0);
+
+  const email = uniqueEmail('captcha');
+  const sent = await request.post('/api/v1/auth/otp/send', {
+    data: { email, captcha: { payload: challenge.data.payload, number: solution } }
+  });
+  expect(sent.status()).toBe(200);
+
+  // Account must not exist until the code is verified.
+  const dbh = db();
+  const user = dbh.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  dbh.close();
+  expect(user).toBeUndefined();
+});
+
+test('login page solves the proof-of-work in the browser and reaches verify', async ({ page }) => {
+  await page.goto('/login');
+  await page.fill('#email', uniqueEmail('pow'));
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/verify-otp\?email=/, { timeout: 30_000 });
 });
 
 test('API key issuance — Bearer works, revoke kills it', async ({ baseURL }) => {

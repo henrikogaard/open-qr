@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createQRCode, listQRCodes, generateQRImage, generateQRSVG } from '$lib/server/qr';
+import { createQRCode, listQRCodes, generateQRImage, generateQRSVG, sanitizeQrCode } from '$lib/server/qr';
 import { getBooleanSetting } from '$lib/server/settings';
 import { buildShortUrl } from '$lib/server/urls';
 import { assertSafeTargetUrl } from '$lib/server/url-safety';
@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ locals }) => {
     throw error(401, 'Authentication required');
   }
   
-  const qrCodes = listQRCodes(locals.user.id);
+  const qrCodes = listQRCodes(locals.user.id).map(sanitizeQrCode);
   return json({ success: true, data: qrCodes });
 };
 
@@ -24,7 +24,12 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
     throw error(401, 'Authentication required');
   }
 
-  const body = await request.json();
+  let body: { targetUrl?: string; style?: Record<string, string>; shortCode?: string; expiresAt?: string; password?: string; campaignId?: number };
+  try {
+    body = await request.json();
+  } catch {
+    throw error(400, 'Request body must be valid JSON');
+  }
   const { targetUrl, style, shortCode, expiresAt, password, campaignId } = body;
 
   if (!targetUrl) {

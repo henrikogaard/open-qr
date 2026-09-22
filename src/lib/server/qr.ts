@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import { isAllowedScheme, isBlacklisted } from './blacklist';
 import { hashSecret, verifySecret } from './auth';
 import { getNumberSetting } from './settings';
+import { fetchPublicImage } from './net-guard';
 
 function assertUsableTargetUrl(url: string): void {
   const scheme = isAllowedScheme(url);
@@ -242,31 +243,26 @@ function escapeXml(s: string): string {
 }
 
 const INLINE_IMAGE_MAX_BYTES = 1_000_000;
-const INLINE_IMAGE_ALLOWED = new Set(['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp', 'image/gif']);
 
 /**
  * Resolves a center-image URL to an embeddable form for SVG. Already-inlined
- * data URLs pass through; http(s) URLs are fetched and base64-encoded so the
- * exported SVG is self-contained offline. Returns null on any failure (caller
- * falls back to omitting the overlay).
+ * data URLs pass through (capped at the same size limit); http(s) URLs are
+ * fetched through the SSRF guard and base64-encoded so the exported SVG is
+ * self-contained offline. Returns null on any failure (caller falls back to
+ * omitting the overlay).
  */
 async function resolveInlineImage(imageUrl: string): Promise<string | null> {
-  if (imageUrl.startsWith('data:')) return imageUrl;
+  if (imageUrl.startsWith('data:')) {
+    if (imageUrl.length > Math.ceil(INLINE_IMAGE_MAX_BYTES / 0.75)) return null;
+    return imageUrl;
+  }
   if (!/^https?:\/\//i.test(imageUrl)) return null;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(imageUrl, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-
-    const contentType = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (!INLINE_IMAGE_ALLOWED.has(contentType)) return null;
-
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.byteLength > INLINE_IMAGE_MAX_BYTES) return null;
-    return `data:${contentType};base64,${buf.toString('base64')}`;
+    const { buffer, contentType } = await fetchPublicImage(imageUrl, {
+      maxBytes: INLINE_IMAGE_MAX_BYTES
+    });
+    return `data:${contentType};base64,${buffer.toString('base64')}`;
   } catch {
     return null;
   }
@@ -356,34 +352,6 @@ async function addCenterImage(ctx: any, canvas: any, imageUrl: string): Promise<
     const size = Math.min(canvas.width, canvas.height) * 0.2;
     const x = (canvas.width - size) / 2;
     const y = (canvas.height - size) / 2;
-    
-    const img = await loadImage(imageUrl);
-    ctx.drawImage(img, x, y, size, size);
-  } catch {
-    // Silently fail if image can't be loaded
-  }
-}
-
-function addCenterText(ctx: any, canvas: any, text: string, color: string, bgColor: string): void {
-  const size = Math.min(canvas.width, canvas.height) * 0.2;
-  const x = canvas.width / 2;
-  const y = canvas.height / 2;
-  
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(x - size / 2, y - size / 3, size, size / 1.5);
-  
-  ctx.fillStyle = color;
-  ctx.font = `bold ${size / 3}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text.substring(0, 10), x, y);
-}
-
-async function addCenterImage(ctx: any, canvas: any, imageUrl: string): Promise<void> {
-  try {
-    const size = Math.min(canvas.width, canvas.height) * 0.2;
-    const x = (canvas.width - size) / 2;
-    const y = (canvas.height - size) / 2;
 
     // Fetched through the SSRF guard and decoded from the buffer — passing
     // the URL straight to loadImage would let it fetch local/internal hosts
@@ -462,6 +430,18 @@ export function createQRCode(
 
 export function getQRCode(shortCode: string) {
   return db.prepare('SELECT * FROM qr_codes WHERE short_code = ?').get(shortCode) as any;
+}
+
+/**
+ * Strips secrets before a QR row is serialized to a client. The PBKDF2 hash
+ * of the QR password never leaves the server; callers that need to show a
+ * "password protected" indicator use `hasPassword`.
+ */
+export function sanitizeQrCode<T extends { password_hash?: string | null }>(
+  row: T
+): Omit<T, 'password_hash'> & { hasPassword: boolean } {
+  const { password_hash, ...rest } = row;
+  return { ...rest, hasPassword: Boolean(password_hash) };
 }
 
 export function updateQRCode(shortCode: string, updates: Partial<any>) {
