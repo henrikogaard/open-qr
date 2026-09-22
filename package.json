@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:init": "node scripts/db-init.mjs",
-    "db:backup": "node scripts/db-backup.mjs"
+    "db:backup": "node scripts/db-backup.mjs",
+    "prepare": "svelte-kit sync"
   },
   "engines": {
     "node": ">=22"
