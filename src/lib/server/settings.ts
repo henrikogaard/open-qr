@@ -1,4 +1,5 @@
 import { db } from '$lib/db';
+import { randomBytes } from 'crypto';
 
 export function getSetting(key: string, defaultValue: string = ''): string {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
@@ -30,6 +31,16 @@ export function getNumberSetting(key: string, defaultValue: number): number {
   return Number.isFinite(n) ? n : defaultValue;
 }
 
+/**
+ * Per-install random key for signing captcha challenges. A fixed default
+ * would let anyone forge challenges against a known secret.
+ */
+export function ensureCaptchaSecret(): void {
+  if (!getSetting('CAPTCHA_SECRET', '')) {
+    setSetting('CAPTCHA_SECRET', randomBytes(32).toString('hex'));
+  }
+}
+
 export function initDefaultSettings(): void {
   const defaults: Record<string, string> = {
     'ENABLE_OTP_AUTH': 'true',
@@ -57,6 +68,8 @@ export function initDefaultSettings(): void {
     'ENABLE_DESTINATION_INTERSTITIAL': 'false',
     'RATE_LIMIT_PER_MINUTE': '60',
     'MAX_QR_PER_USER': '0',
+    'ENABLE_SIGNUP_CAPTCHA': 'true',
+    'PURGE_STALE_USERS_DAYS': '30',
     'PUBLIC_BASE_URL': '',
     'TERMS_VERSION': '2026-05-26',
     'TERMS_CONTACT_EMAIL': '',
@@ -69,4 +82,8 @@ export function initDefaultSettings(): void {
       setSetting(key, value);
     }
   }
+
+  // Per-install random key for signing captcha challenges — not a fixed
+  // default, so challenges can't be forged against a known secret.
+  ensureCaptchaSecret();
 }

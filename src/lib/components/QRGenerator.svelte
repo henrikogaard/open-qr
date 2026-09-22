@@ -266,7 +266,8 @@
   }
 
   // Live preview: re-run whenever any style/url input changes.
-  $: targetUrl,
+  $: previewDeps = [
+    targetUrl,
     template,
     foregroundColor,
     backgroundColor,
@@ -275,8 +276,9 @@
     centerType,
     centerText,
     centerTextColor,
-    errorCorrection,
-    schedulePreview();
+    errorCorrection
+  ];
+  $: if (previewDeps) schedulePreview();
 
   onDestroy(() => {
     clearTimeout(debounceHandle);

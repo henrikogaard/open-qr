@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getQRCode, updateQRCode, deleteQRCode, generateQRImage, generateQRSVG } from '$lib/server/qr';
+import { getQRCode, updateQRCode, deleteQRCode, generateQRImage, generateQRSVG, sanitizeQrCode } from '$lib/server/qr';
 import { buildShortUrl } from '$lib/server/urls';
 import { assertSafeTargetUrl } from '$lib/server/url-safety';
 import { getCampaign } from '$lib/server/campaigns';
@@ -15,8 +15,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   if (qr.user_id !== locals.user.id && !locals.user.isAdmin) {
     throw error(403, 'Access denied');
   }
-  
-  return json({ success: true, data: qr });
+
+  return json({ success: true, data: sanitizeQrCode(qr) });
 };
 
 export const PATCH: RequestHandler = async ({ params, request, locals, url }) => {
@@ -30,7 +30,12 @@ export const PATCH: RequestHandler = async ({ params, request, locals, url }) =>
     throw error(403, 'Access denied');
   }
   
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    throw error(400, 'Request body must be valid JSON');
+  }
   if (typeof body.target_url === 'string') {
     await assertSafeTargetUrl(body.target_url);
   }
@@ -61,7 +66,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, url }) =>
   return json({
     success: true,
     data: {
-      ...updated,
+      ...sanitizeQrCode(updated),
       shortUrl,
       dataUrl,
       svg

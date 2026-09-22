@@ -379,6 +379,44 @@ function addCenterText(ctx: any, canvas: any, text: string, color: string, bgCol
   ctx.fillText(text.substring(0, 10), x, y);
 }
 
+async function addCenterImage(ctx: any, canvas: any, imageUrl: string): Promise<void> {
+  try {
+    const size = Math.min(canvas.width, canvas.height) * 0.2;
+    const x = (canvas.width - size) / 2;
+    const y = (canvas.height - size) / 2;
+
+    // Fetched through the SSRF guard and decoded from the buffer — passing
+    // the URL straight to loadImage would let it fetch local/internal hosts
+    // with no scheme, size, or redirect checks.
+    let img;
+    if (imageUrl.startsWith('data:')) {
+      if (imageUrl.length > Math.ceil(INLINE_IMAGE_MAX_BYTES / 0.75)) return;
+      img = await loadImage(imageUrl);
+    } else {
+      const { buffer } = await fetchPublicImage(imageUrl, { maxBytes: INLINE_IMAGE_MAX_BYTES });
+      img = await loadImage(buffer);
+    }
+    ctx.drawImage(img, x, y, size, size);
+  } catch {
+    // Silently fail if image can't be loaded
+  }
+}
+
+function addCenterText(ctx: any, canvas: any, text: string, color: string, bgColor: string): void {
+  const size = Math.min(canvas.width, canvas.height) * 0.2;
+  const x = canvas.width / 2;
+  const y = canvas.height / 2;
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(x - size / 2, y - size / 3, size, size / 1.5);
+
+  ctx.fillStyle = color;
+  ctx.font = `bold ${size / 3}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text.substring(0, 10), x, y);
+}
+
 export function createQRCode(
   targetUrl: string,
   userId: number | null,
