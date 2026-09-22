@@ -32,11 +32,11 @@
             href={shortUrl}
             target="_blank"
             rel="noopener"
-            class="flex h-10 flex-1 items-center truncate rounded-md border border-border-strong bg-surface px-3 font-mono text-xs text-fg hover:border-accent hover:text-accent"
+            class="flex min-h-10 flex-1 items-center rounded-md border border-border-strong bg-surface px-3 py-2 font-mono text-xs leading-relaxed break-all text-fg hover:border-accent hover:text-accent"
           >
             {shortUrl}
           </a>
-          <button on:click={copyShort} class="btn-secondary btn-sm shrink-0" type="button" aria-label="Copy short URL">
+          <button on:click={copyShort} class="btn-secondary btn-sm shrink-0" type="button" aria-label="Copy short URL" aria-live="polite">
             {#if copied}
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
               Copied

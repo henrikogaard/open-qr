@@ -21,6 +21,10 @@
       <p class="mt-1 max-w-2xl truncate text-sm text-fg-muted">{data.qr.target_url}</p>
     </div>
     <div class="flex gap-2">
+      <a href="/dashboard" class="btn-secondary">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        Back
+      </a>
       <a href={data.shortUrl} target="_blank" rel="noreferrer" class="btn-secondary">Open</a>
       <a href={`/dashboard/qr/${data.qr.short_code}`} class="btn-primary">Edit</a>
     </div>

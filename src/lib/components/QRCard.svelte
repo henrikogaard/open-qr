@@ -48,23 +48,23 @@
   {/if}
 
   <div class="grid grid-cols-5 gap-1.5 pt-1">
-    <button on:click={copyUrl} class="btn-ghost btn-sm" aria-label="Copy URL">
+    <button on:click={copyUrl} class="btn-ghost btn-sm" aria-label={copied ? 'URL copied' : 'Copy URL'} title="Copy short URL" aria-live="polite">
       {#if copied}
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
       {:else}
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       {/if}
     </button>
-    <a href={`/dashboard/qr/${qr.short_code}`} class="btn-ghost btn-sm" aria-label="Edit">
+    <a href={`/dashboard/qr/${qr.short_code}`} class="btn-ghost btn-sm" aria-label="Edit" title="Edit settings">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
     </a>
-    <a href={`/dashboard/qr/${qr.short_code}/stats`} class="btn-ghost btn-sm" aria-label="Stats">
+    <a href={`/dashboard/qr/${qr.short_code}/stats`} class="btn-ghost btn-sm" aria-label="Stats" title="View scan stats">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/></svg>
     </a>
-    <button on:click={() => onToggle(qr.short_code, !qr.is_active)} class="btn-ghost btn-sm" aria-label={qr.is_active ? 'Disable' : 'Enable'}>
+    <button on:click={() => onToggle(qr.short_code, !qr.is_active)} class="btn-ghost btn-sm" aria-label={qr.is_active ? 'Disable' : 'Enable'} title={qr.is_active ? 'Disable code' : 'Enable code'}>
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
     </button>
-    <button on:click={() => onDelete(qr.short_code)} class="btn-ghost btn-sm text-danger hover:bg-danger/10 hover:text-danger" aria-label="Delete">
+    <button on:click={() => onDelete(qr.short_code)} class="btn-ghost btn-sm text-danger hover:bg-danger/10 hover:text-danger" aria-label="Delete" title="Delete code">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
     </button>
   </div>

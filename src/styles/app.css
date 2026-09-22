@@ -158,6 +158,14 @@
   .input[type="color"] {
     @apply h-10 w-full p-1 cursor-pointer;
   }
+  .input[type="file"] {
+    @apply px-0 py-1.5;
+  }
+  .input[type="file"]::file-selector-button {
+    @apply mr-3 h-8 cursor-pointer rounded-md border border-border-strong
+           bg-surface-2 px-3 text-xs font-medium text-fg
+           transition-colors hover:bg-surface-3;
+  }
   .input[type="datetime-local"]::-webkit-calendar-picker-indicator {
     filter: invert(0.5);
     cursor: pointer;
