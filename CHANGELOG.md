@@ -4,7 +4,7 @@ All notable changes to Open-QR will go here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [semver](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] — 2026-09-22
 
 ### Added
 - Proof-of-work human verification on the login/OTP form (self-hosted,
@@ -72,6 +72,9 @@ uses [semver](https://semver.org/spec/v2.0.0.html).
   failed with a foreign-key error; it now cascades.
 - Migration runner wraps each migration in a transaction (SQL and
   bookkeeping commit together).
+- Fresh checkouts work out of the box: the standard `prepare` hook
+  regenerates `.svelte-kit/tsconfig.json` after install, and the app
+  creates its `data/` directory on first open instead of crashing.
 
 ## [1.3.0] — 2026-07-07
 

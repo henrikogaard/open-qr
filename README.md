@@ -4,7 +4,7 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 
 **Try it live: [openqr.xyz](https://openqr.xyz)** — the maintainer-run reference instance, free to use under its [Terms of Use](https://openqr.xyz/terms).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](CHANGELOG.md)
 
 ---
 
