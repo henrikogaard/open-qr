@@ -81,7 +81,8 @@
     debounceHandle = setTimeout(runPreview, 200);
   }
 
-  $: targetUrl,
+  $: previewDeps = [
+    targetUrl,
     template,
     foregroundColor,
     backgroundColor,
@@ -90,8 +91,9 @@
     centerType,
     centerText,
     centerTextColor,
-    errorCorrection,
-    schedulePreview();
+    errorCorrection
+  ];
+  $: if (previewDeps) schedulePreview();
 
   onMount(() => {
     mounted = true;

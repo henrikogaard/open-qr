@@ -4,6 +4,47 @@ All notable changes to Open-QR will go here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [semver](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Proof-of-work human verification on the login/OTP form (self-hosted,
+  no third-party widget), with an admin toggle
+  (`ENABLE_SIGNUP_CAPTCHA`, default on) and a honeypot field.
+- Stale-account purge: users with no QR codes, API keys, or sessions are
+  deleted after `PURGE_STALE_USERS_DAYS` (default 30, 0 disables); admins
+  are exempt. Runs with the new cleanup sweep at startup and daily.
+- Cleanup sweep for expired sessions and used/expired OTP codes.
+- Migration 006 adds cascading deletes (scan logs with their QR code,
+  sessions/API keys/presets/campaigns with their user) and an `email`
+  column on `otp_codes`.
+- ESLint, Prettier, a `check` script, Node engines pinning, and a GitHub
+  Actions CI workflow (lint, typecheck, unit tests, build, e2e).
+
+### Changed
+- Accounts are now created when the OTP is **verified**, not when it is
+  requested — bots can no longer mass-create empty accounts by spamming
+  the OTP-send endpoint.
+- Rate limiting and OTP throttling prefer `CF-Connecting-IP` /
+  `X-Forwarded-For` over the socket address, so visitors behind a
+  reverse proxy no longer share a single bucket.
+- QR API and dashboard responses no longer include `password_hash`
+  (a `hasPassword` flag is exposed instead).
+
+### Security
+- SSRF guard for QR center-image fetches: private/loopback/link-local
+  targets rejected, redirects re-validated per hop, content-type and
+  size capped on both the PNG and SVG paths.
+- QR create/update endpoints return HTTP 400 for malformed JSON bodies
+  instead of a 500.
+- The abuse-report form action is rate limited (5/min per client), closing
+  a spam channel that bypassed the `/api/*` limiter.
+
+### Fixed
+- Deleting a QR code with scan history no longer fails with a foreign-key
+  error; scan logs cascade with their code.
+- Migration runner wraps each migration in a transaction (SQL and
+  bookkeeping commit together).
+
 ## [1.3.0] — 2026-07-07
 
 ### Fixed

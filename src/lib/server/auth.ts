@@ -68,10 +68,10 @@ export function createSession(userId: number): string {
   const sessionId = randomBytes(32).toString('hex');
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
-  
+
   db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
     .run(sessionId, userId, expiresAt.toISOString());
-  
+
   return sessionId;
 }
 
@@ -106,6 +106,17 @@ export function resetOtpRateLimits(): void {
   otpSendIpAttempts.clear();
 }
 
+function maybePromoteFirstUser(userId: number): void {
+  if (process.env.OPENQR_AUTO_PROMOTE_FIRST_USER === 'false') return;
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+  if (userCount.count === 1) {
+    db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
+  }
+}
+
+// The user row is NOT created here — only at verifyOTP, once the mailbox is
+// proven. Creating accounts on send let bots mass-produce empty users by
+// spamming this endpoint with arbitrary addresses.
 export async function sendLoginCode(
   email: string,
   options?: { ip?: string | null }
@@ -121,29 +132,16 @@ export async function sendLoginCode(
     throw new OtpRateLimitError();
   }
 
-  let user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail) as { id: number } | undefined;
-  
-  if (!user) {
-    const result = db.prepare('INSERT INTO users (email) VALUES (?)').run(normalizedEmail);
-    user = { id: Number(result.lastInsertRowid) };
+  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail) as { id: number } | undefined;
 
-    const promoteFirstUser = process.env.OPENQR_AUTO_PROMOTE_FIRST_USER !== 'false';
-    if (promoteFirstUser) {
-      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-      if (userCount.count === 1) {
-        db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
-      }
-    }
-  }
-  
   const code = generateOTP();
   const codeHash = hashSecret(code);
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 10);
-  
-  db.prepare('INSERT INTO otp_codes (user_id, code, expires_at) VALUES (?, ?, ?)')
-    .run(user.id, codeHash, expiresAt.toISOString());
-  
+
+  db.prepare('INSERT INTO otp_codes (user_id, email, code, expires_at) VALUES (?, ?, ?, ?)')
+    .run(user?.id ?? null, normalizedEmail, codeHash, expiresAt.toISOString());
+
   await sendOTP(normalizedEmail, code);
 }
 
@@ -153,21 +151,28 @@ export function verifyOTP(email: string, code: string): { success: boolean; sess
     return { success: false };
   }
 
-  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail) as { id: number } | undefined;
-  if (!user) return { success: false };
-  
+  // Match by the otp row's email column, falling back to the owning user's
+  // email for rows written before otp_codes.email existed.
   const otps = db.prepare(`
-    SELECT id, code, expires_at FROM otp_codes 
-    WHERE user_id = ? AND used = 0
-    ORDER BY created_at DESC
+    SELECT o.id, o.code, o.expires_at FROM otp_codes o
+    LEFT JOIN users u ON u.id = o.user_id
+    WHERE (o.email = ? OR u.email = ?) AND o.used = 0
+    ORDER BY o.created_at DESC
     LIMIT 10
-  `).all(user.id) as { id: number; code: string; expires_at: string }[];
+  `).all(normalizedEmail, normalizedEmail) as { id: number; code: string; expires_at: string }[];
   const otp = otps.find((candidate) => !isExpired(candidate.expires_at) && verifySecret(candidate.code, code));
-  
+
   if (!otp) return { success: false };
-  
+
   db.prepare('UPDATE otp_codes SET used = 1 WHERE id = ?').run(otp.id);
-  
+
+  let user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail) as { id: number } | undefined;
+  if (!user) {
+    const result = db.prepare('INSERT INTO users (email) VALUES (?)').run(normalizedEmail);
+    user = { id: Number(result.lastInsertRowid) };
+    maybePromoteFirstUser(user.id);
+  }
+
   const sessionId = createSession(user.id);
   return { success: true, sessionId };
 }

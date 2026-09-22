@@ -4,10 +4,20 @@ import { extractApiKey, getUserByApiKey } from '$lib/server/api-keys';
 import { runMigrations } from '$lib/db/schema';
 import { getNumberSetting, initDefaultSettings } from '$lib/server/settings';
 import { buildLimiterKey, checkRateLimit } from '$lib/server/rate-limit';
+import { runCleanup } from '$lib/server/cleanup';
 
 // Run migrations and init settings on startup
 runMigrations();
 initDefaultSettings();
+
+// Housekeeping at boot and daily thereafter. Skipped under vitest (modules
+// are imported by tests) and unref'd so it never holds the process open.
+if (!process.env.VITEST) {
+  runCleanup();
+  const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  const cleanupTimer = setInterval(runCleanup, CLEANUP_INTERVAL_MS);
+  cleanupTimer.unref();
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
   event.locals.user = null;
@@ -39,7 +49,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   // Rate limit /api/* (skip /api/v1/health so probes don't get throttled).
   if (isApi && event.url.pathname !== '/api/v1/health') {
     const limit = getNumberSetting('RATE_LIMIT_PER_MINUTE', 60);
-    const key = buildLimiterKey(event.locals.user?.id, event.request);
+    const key = buildLimiterKey(event.locals.user?.id, event.request, event.getClientAddress);
     const result = checkRateLimit(key, limit);
     if (!result.allowed) {
       return json(

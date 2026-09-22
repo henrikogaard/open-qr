@@ -1,32 +1,57 @@
 <script>
+  import { sha256Hex } from '$lib/sha256';
+
   let email = '';
+  let website = ''; // honeypot — real users never see or fill this
   let loading = false;
+  let solving = false;
   let error = '';
-  let sent = false;
-  
+
+  /**
+   * Solve the proof-of-work challenge: find n in [0, maxnumber) such that
+   * sha256(salt + n) equals the challenge hash. ~500k hashes on average —
+   * about a second of CPU in the browser, invisible to humans, but a real
+   * per-attempt cost for scripts.
+   */
+  async function solveCaptcha() {
+    const response = await fetch('/api/v1/auth/captcha');
+    const result = await response.json();
+    if (!result.success) throw new Error('Could not start verification');
+    const { payload, salt, challenge, maxnumber } = result.data;
+
+    for (let n = 0; n < maxnumber; n++) {
+      if (sha256Hex(salt + n) === challenge) {
+        return { payload, number: n };
+      }
+    }
+    throw new Error('Could not verify — please try again');
+  }
+
   async function sendOTP() {
     loading = true;
+    solving = !website;
     error = '';
-    
+
     try {
+      const captcha = website ? null : await solveCaptcha();
       const response = await fetch('/api/v1/auth/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email, captcha, website })
       });
-      
+
       const result = await response.json();
-      
+
       if (!result.success) {
-        throw new Error(result.error?.message || 'Failed to send OTP');
+        throw new Error(result.error?.message || result.message || 'Failed to send OTP');
       }
-      
-      sent = true;
+
       window.location.href = `/verify-otp?email=${encodeURIComponent(email)}`;
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to send OTP';
     } finally {
       loading = false;
+      solving = false;
     }
   }
 </script>
@@ -65,6 +90,17 @@
             />
           </div>
 
+          <!-- Honeypot: hidden from humans, bait for form-filling bots. -->
+          <input
+            type="text"
+            name="website"
+            bind:value={website}
+            tabindex="-1"
+            autocomplete="off"
+            aria-hidden="true"
+            class="hidden"
+          />
+
           {#if error}
             <div class="alert alert-danger">
               <span>{error}</span>
@@ -72,7 +108,7 @@
           {/if}
 
           <button type="submit" disabled={loading || !email} class="btn-primary w-full">
-            {loading ? 'Sending…' : 'Send code'}
+            {solving ? 'Verifying you are human…' : loading ? 'Sending…' : 'Send code'}
           </button>
         </form>
       </div>

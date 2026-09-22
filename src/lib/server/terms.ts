@@ -97,7 +97,7 @@ export function getTermsSections(ctx: TermsContext): TermsSection[] {
         ctx.plausibleEnabled && ctx.plausibleDomain
           ? `This instance loads Plausible Analytics for ${ctx.plausibleDomain}. Plausible is configured by the operator to measure aggregate page usage and referrers without advertising cookies or cross-site profiling.`
           : 'There are no third-party trackers, pixels, analytics SDKs, or advertising integrations. The Service does not profile users or make automated decisions that produce legal effects about you (GDPR Article 22).',
-        `The data controller for this instance is ${who}${ctx.contactEmail ? ` (${ctx.contactEmail})` : ''}. Data is stored on the operator\'s own infrastructure; the operator\'s privacy notice (if separate) discloses the hosting region.`
+        `The data controller for this instance is ${who}${ctx.contactEmail ? ` (${ctx.contactEmail})` : ''}. Data is stored on the operator's own infrastructure; the operator's privacy notice (if separate) discloses the hosting region.`
       ]
     },
     {

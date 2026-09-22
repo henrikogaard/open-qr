@@ -78,18 +78,43 @@ describe('auth module', () => {
 
   it('should store OTPs hashed, not plaintext', async () => {
     await sendLoginCode('test@example.com');
-    const row = db.prepare(`
-      SELECT code FROM otp_codes
-      JOIN users ON users.id = otp_codes.user_id
-      WHERE users.email = ?
-    `).get('test@example.com') as { code: string };
+    const row = db.prepare('SELECT code FROM otp_codes WHERE email = ?').get('test@example.com') as {
+      code: string;
+    };
 
     expect(row.code).not.toMatch(/^\d{6}$/);
   });
 
-  it('should auto-promote the first user to admin by default', async () => {
+  it('should not create the account until the OTP is verified', async () => {
+    await sendLoginCode('newuser@example.com');
+
+    const before = db.prepare('SELECT id FROM users WHERE email = ?').get('newuser@example.com');
+    expect(before).toBeUndefined();
+
+    // Verify with a code we control (sendLoginCode's own code is unknown).
+    db.prepare('INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)')
+      .run('newuser@example.com', hashSecret('123456'), new Date(Date.now() + 60_000).toISOString());
+    const result = verifyOTP('newuser@example.com', '123456');
+
+    expect(result.success).toBe(true);
+    const after = db.prepare('SELECT id FROM users WHERE email = ?').get('newuser@example.com');
+    expect(after).toBeDefined();
+  });
+
+  it('should not reuse a consumed OTP', () => {
+    db.prepare('INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)')
+      .run('test@example.com', hashSecret('123456'), new Date(Date.now() + 60_000).toISOString());
+
+    expect(verifyOTP('test@example.com', '123456').success).toBe(true);
+    expect(verifyOTP('test@example.com', '123456').success).toBe(false);
+  });
+
+  it('should auto-promote the first user to admin by default', () => {
     delete process.env.OPENQR_AUTO_PROMOTE_FIRST_USER;
-    await sendLoginCode('first@example.com');
+    db.prepare('INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)')
+      .run('first@example.com', hashSecret('123456'), new Date(Date.now() + 60_000).toISOString());
+    verifyOTP('first@example.com', '123456');
+
     const row = db.prepare('SELECT is_admin FROM users WHERE email = ?').get('first@example.com') as {
       is_admin: number;
     };
@@ -97,8 +122,11 @@ describe('auth module', () => {
     expect(row.is_admin).toBe(1);
   });
 
-  it('should not auto-promote the first user to admin when explicitly disabled', async () => {
-    await sendLoginCode('first@example.com');
+  it('should not auto-promote the first user to admin when explicitly disabled', () => {
+    db.prepare('INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)')
+      .run('first@example.com', hashSecret('123456'), new Date(Date.now() + 60_000).toISOString());
+    verifyOTP('first@example.com', '123456');
+
     const row = db.prepare('SELECT is_admin FROM users WHERE email = ?').get('first@example.com') as {
       is_admin: number;
     };

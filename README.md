@@ -56,8 +56,10 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
 
 ### Authentication (Optional)
 - **Email OTP**: Secure login with 6-digit codes sent via email
+- **Human verification**: Built-in proof-of-work check on the login form — no third-party widget, no cookies, configurable in the admin panel
 - **Anonymous mode**: Allow QR generation without authentication (configurable)
-- **Session management**: 30-day HTTP-only cookies with automatic cleanup
+- **Session management**: 30-day HTTP-only cookies; expired sessions and spent codes are swept automatically
+- **Stale account purge**: accounts with no QR codes, API keys, or sessions are deleted after 30 days (configurable, admins exempt)
 - **First-user admin**: The first person to register automatically becomes administrator
 
 ### Management
@@ -1017,9 +1019,21 @@ cloudflared tunnel --url http://localhost:3000
   returns 429 with `Retry-After`. `MAX_QR_PER_USER` per-user quota on top.
 - **Bulk import caps**: 512 KB body, 1000 rows per request.
 - **Cookies**: `HttpOnly`, `SameSite=Strict`, `Secure` set automatically
-  when served over HTTPS. 30-day session lifetime; expired sessions are
-  cleaned up on use.
+  when served over HTTPS. 30-day session lifetime.
 - **OTP**: 10-minute expiry, single-use codes, per-email rate limited.
+  Accounts are only created when a code is **verified** — spamming the
+  OTP endpoint cannot mass-produce empty accounts.
+- **Proof-of-work captcha**: the login form solves a challenge costing
+  ~1s of browser CPU before a code can be requested (HMAC-signed,
+  single-use, 15-minute expiry; disable with the admin toggle).
+- **Automatic cleanup**: expired sessions, used/expired OTP codes, and
+  stale accounts (no QR codes, API keys, or sessions for 30 days by
+  default) are purged at startup and daily. Admins are never purged.
+- **Referential integrity**: scan logs cascade with their QR code,
+  sessions/API keys/presets with their user — deleting data never leaves
+  orphaned rows or fails on foreign-key constraints.
+- **SSRF guard**: server-side fetches of QR center images reject private,
+  loopback, and link-local addresses, and re-validate every redirect hop.
 - **Password hashing**: PBKDF2-SHA256, 120k iterations (used for QR-code
   password gates and OTP code storage).
 - **API key storage**: tokens stored as SHA-256 hash; the plaintext is shown

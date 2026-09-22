@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { resolveClientIp } from './client-ip';
 
 /**
  * In-memory sliding-window rate limiter.
@@ -68,10 +69,13 @@ export function checkRateLimit(key: string, limitPerMinute: number): RateLimitRe
   };
 }
 
-export function buildLimiterKey(userId: number | null | undefined, request: Request): string {
+export function buildLimiterKey(
+  userId: number | null | undefined,
+  request: Request,
+  getClientAddress?: () => string
+): string {
   if (userId) return `u:${userId}`;
-  const fwd = request.headers.get('x-forwarded-for') || 'local';
-  const ip = fwd.split(',')[0].trim() || 'local';
+  const ip = resolveClientIp(request, () => getClientAddress?.() || 'local');
   return 'ip:' + createHash('sha256').update(ip).digest('hex').slice(0, 24);
 }
 
