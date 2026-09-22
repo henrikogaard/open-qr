@@ -2,6 +2,11 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Operator tool: applies migrations to DATABASE_URL from a repo checkout,
+// e.g. before a rolling deployment. The running app doesn't need this — it
+// embeds the same SQL at build time (see src/lib/db/schema.ts) and migrates
+// on boot.
+
 const dbPath = process.env.DATABASE_URL || './data/openqr.db';
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 

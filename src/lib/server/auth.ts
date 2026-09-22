@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { pbkdf2Sync, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { sendOTP } from './mail';
+import { detectDeviceClass } from './scan-meta';
 
 const HASH_PREFIX = 'pbkdf2_sha256';
 const HASH_ITERATIONS = 120_000;
@@ -64,15 +65,43 @@ export function generateOTP(): string {
   return randomInt(100000, 1000000).toString();
 }
 
-export function createSession(userId: number): string {
+export function createSession(userId: number, userAgent?: string | null): string {
   const sessionId = randomBytes(32).toString('hex');
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
 
-  db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(sessionId, userId, expiresAt.toISOString());
+  db.prepare('INSERT INTO sessions (id, user_id, expires_at, user_agent) VALUES (?, ?, ?, ?)')
+    .run(sessionId, userId, expiresAt.toISOString(), userAgent ? userAgent.slice(0, 250) : null);
 
   return sessionId;
+}
+
+export interface SessionInfo {
+  current: boolean;
+  deviceClass: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Active sessions for the "log out everywhere" UI. Raw session ids stay server-side. */
+export function listSessions(userId: number, currentSessionId: string | null): SessionInfo[] {
+  const rows = db.prepare(`
+    SELECT id, user_agent, created_at, expires_at
+    FROM sessions
+    WHERE user_id = ? AND datetime(expires_at) > datetime('now')
+    ORDER BY created_at DESC
+  `).all(userId) as { id: string; user_agent: string | null; created_at: string; expires_at: string }[];
+
+  return rows.map((row) => ({
+    current: row.id === currentSessionId,
+    deviceClass: detectDeviceClass(row.user_agent),
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  }));
+}
+
+export function destroyAllSessions(userId: number): void {
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
 }
 
 export function getUserBySession(sessionId: string): { id: number; email: string; isAdmin: boolean } | null {
@@ -145,7 +174,7 @@ export async function sendLoginCode(
   await sendOTP(normalizedEmail, code);
 }
 
-export function verifyOTP(email: string, code: string): { success: boolean; sessionId?: string } {
+export function verifyOTP(email: string, code: string, userAgent?: string | null): { success: boolean; sessionId?: string } {
   const normalizedEmail = email.trim().toLowerCase();
   if (!consumeRateLimit(otpVerifyAttempts, normalizedEmail, 10, 10 * 60 * 1000)) {
     return { success: false };
@@ -173,6 +202,6 @@ export function verifyOTP(email: string, code: string): { success: boolean; sess
     maybePromoteFirstUser(user.id);
   }
 
-  const sessionId = createSession(user.id);
+  const sessionId = createSession(user.id, userAgent);
   return { success: true, sessionId };
 }

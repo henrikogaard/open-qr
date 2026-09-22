@@ -13,6 +13,48 @@
   let reports = [];
   let newPattern = '';
   let isRegex = false;
+
+  /** @type {{ type: 'success' | 'danger'; text: string } | null} */
+  let toast = null;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let toastTimer;
+
+  /**
+   * @param {'success' | 'danger'} type
+   * @param {string} text
+   */
+  function notify(type, text) {
+    toast = { type, text };
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), 2500);
+  }
+
+  const SETTING_LABELS = {
+    BRAND_NAME: 'brand name',
+    PUBLIC_BASE_URL: 'public base URL',
+    ENABLE_OTP_AUTH: 'OTP auth',
+    ENABLE_ANONYMOUS_CREATION: 'anonymous creation',
+    ENABLE_CUSTOM_SLUGS: 'custom slugs',
+    CUSTOM_SLUGS_ADMIN_ONLY: 'custom-slug admin limit',
+    ENABLE_DESTINATION_INTERSTITIAL: 'destination interstitial',
+    ENABLE_SIGNUP_CAPTCHA: 'login verification',
+    PURGE_STALE_USERS_DAYS: 'stale account purge',
+    ENABLE_THREAT_INTEL: 'external URL checks',
+    THREAT_INTEL_FAIL_CLOSED: 'fail-closed mode',
+    ENABLE_WEB_RISK: 'Google Web Risk',
+    WEB_RISK_API_KEY: 'Web Risk API key',
+    ENABLE_URLHAUS: 'URLhaus',
+    URLHAUS_AUTH_KEY: 'URLhaus key',
+    ENABLE_PHISHTANK: 'PhishTank',
+    PHISHTANK_APP_KEY: 'PhishTank key',
+    ENABLE_SPAMHAUS_DBL: 'Spamhaus DBL',
+    SPAMHAUS_DBL_ZONE: 'Spamhaus zone',
+    ENABLE_PLAUSIBLE: 'Plausible',
+    PLAUSIBLE_DOMAIN: 'Plausible domain',
+    PLAUSIBLE_SCRIPT_SRC: 'Plausible script URL'
+  };
+  /** @param {string} key */
+  const labelFor = (key) => SETTING_LABELS[key] || key;
   
   onMount(() => {
     loadData();
@@ -59,19 +101,28 @@
   }
   
   async function addPattern() {
-    await fetch('/api/v1/admin/blacklist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pattern: newPattern, isRegex })
-    });
-    newPattern = '';
-    isRegex = false;
-    await loadBlacklist();
+    if (!newPattern.trim()) return;
+    try {
+      const response = await fetch('/api/v1/admin/blacklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pattern: newPattern, isRegex })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || result.message || 'Add failed');
+      newPattern = '';
+      isRegex = false;
+      await loadBlacklist();
+      notify('success', 'Pattern added');
+    } catch (err) {
+      notify('danger', `Could not add pattern — ${err instanceof Error ? err.message : 'request failed'}`);
+    }
   }
-  
+
   async function removePattern(id) {
     await fetch(`/api/v1/admin/blacklist?id=${id}`, { method: 'DELETE' });
     await loadBlacklist();
+    notify('success', 'Pattern removed');
   }
 
   async function deleteQR(shortCode) {
@@ -88,8 +139,9 @@
       body: JSON.stringify({ enabled })
     });
     await loadBlacklist();
+    notify('success', enabled ? 'Blacklist enabled' : 'Blacklist disabled');
   }
-  
+
   async function toggleSuspicious(enabled) {
     await fetch('/api/v1/admin/blacklist', {
       method: 'POST',
@@ -97,15 +149,29 @@
       body: JSON.stringify({ suspiciousEnabled: enabled })
     });
     await loadBlacklist();
+    notify('success', enabled ? 'Suspicious-URL blocking enabled' : 'Suspicious-URL blocking disabled');
   }
   
+  /**
+   * @param {string} key
+   * @param {string} value
+   */
   async function updateSetting(key, value) {
-    await fetch('/api/v1/admin/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [key]: value })
-    });
-    settings = { ...settings, [key]: value };
+    try {
+      const response = await fetch('/api/v1/admin/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || result.message || 'Save failed');
+      }
+      settings = { ...settings, [key]: value };
+      notify('success', `Saved ${labelFor(key)}`);
+    } catch (err) {
+      notify('danger', `Could not save ${labelFor(key)} — ${err instanceof Error ? err.message : 'request failed'}`);
+    }
   }
 
   async function toggleSetting(key, checked) {
@@ -113,14 +179,25 @@
   }
 
   async function updateReportStatus(id, status) {
-    await fetch('/api/v1/admin/reports', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status })
-    });
-    await loadReports();
+    try {
+      const response = await fetch('/api/v1/admin/reports', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || result.message || 'Update failed');
+      await loadReports();
+      notify('success', 'Report updated');
+    } catch (err) {
+      notify('danger', `Could not update report — ${err instanceof Error ? err.message : 'request failed'}`);
+    }
   }
 </script>
+
+<svelte:head>
+  <title>Admin — Open-QR</title>
+</svelte:head>
 
 <Navbar user={data.user} />
 
@@ -245,20 +322,14 @@
         <input id="public-base-url" type="url" value={settings.PUBLIC_BASE_URL || ''} placeholder="Leave blank to use the request URL" on:blur={(e) => updateSetting('PUBLIC_BASE_URL', e.target.value)} class="input" />
         <p class="mt-1.5 text-xs text-fg-dim">Set this to the host where QR codes will be scanned (e.g. <span class="font-mono">https://qr.yourdomain.com</span>). Leave blank in development and short URLs use whatever origin the browser hit.</p>
       </div>
-      <div>
-        <label for="enable-otp-auth" class="field-label">Enable OTP auth</label>
-        <select id="enable-otp-auth" value={settings.ENABLE_OTP_AUTH || 'true'} on:change={(e) => updateSetting('ENABLE_OTP_AUTH', e.target.value)} class="select">
-          <option value="true">Enabled</option>
-          <option value="false">Disabled</option>
-        </select>
-      </div>
-      <div>
-        <label for="enable-anonymous-creation" class="field-label">Enable anonymous creation</label>
-        <select id="enable-anonymous-creation" value={settings.ENABLE_ANONYMOUS_CREATION || 'true'} on:change={(e) => updateSetting('ENABLE_ANONYMOUS_CREATION', e.target.value)} class="select">
-          <option value="true">Enabled</option>
-          <option value="false">Disabled</option>
-        </select>
-      </div>
+      <label class="flex items-center gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_OTP_AUTH !== 'false'} on:change={(e) => toggleSetting('ENABLE_OTP_AUTH', e.target.checked)} class="checkbox" />
+        <span>Enable OTP auth</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_ANONYMOUS_CREATION !== 'false'} on:change={(e) => toggleSetting('ENABLE_ANONYMOUS_CREATION', e.target.checked)} class="checkbox" />
+        <span>Enable anonymous creation</span>
+      </label>
       <label class="flex items-center gap-2 text-sm text-fg">
         <input type="checkbox" checked={settings.ENABLE_CUSTOM_SLUGS === 'true'} on:change={(e) => toggleSetting('ENABLE_CUSTOM_SLUGS', e.target.checked)} class="checkbox" />
         <span>Enable custom slugs</span>
@@ -271,6 +342,18 @@
         <input type="checkbox" checked={settings.ENABLE_DESTINATION_INTERSTITIAL === 'true'} on:change={(e) => toggleSetting('ENABLE_DESTINATION_INTERSTITIAL', e.target.checked)} class="checkbox" />
         <span>Show destination interstitial before redirects</span>
       </label>
+      <label class="flex items-start gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_SIGNUP_CAPTCHA !== 'false'} on:change={(e) => toggleSetting('ENABLE_SIGNUP_CAPTCHA', e.target.checked)} class="checkbox mt-0.5" />
+        <span>
+          <span class="block font-medium">Require human verification at login</span>
+          <span class="mt-1 block text-xs text-fg-dim">Proof-of-work check on the one-time-code form. Runs in the browser — no third-party widget, no cookies.</span>
+        </span>
+      </label>
+      <div>
+        <label for="purge-stale-users" class="field-label">Purge inactive accounts after (days)</label>
+        <input id="purge-stale-users" type="number" min="0" value={settings.PURGE_STALE_USERS_DAYS ?? '30'} on:blur={(e) => updateSetting('PURGE_STALE_USERS_DAYS', e.target.value)} class="input" />
+        <p class="mt-1.5 text-xs text-fg-dim">Accounts with no QR codes, API keys, or sessions are deleted after this many days. 0 disables purging. Admins are never purged.</p>
+      </div>
     </div>
 
     <div class="card p-6 sm:p-8 space-y-5">
@@ -406,7 +489,7 @@
       </section>
     </div>
 
-  {:else if activeTab === 'analytics'}
+    {:else if activeTab === 'analytics'}
     <div class="space-y-8">
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {#each [
@@ -487,4 +570,20 @@
       </div>
     </div>
   {/if}
+
+  <!-- Save feedback: persistent live region so screen readers announce updates -->
+  <div class="fixed bottom-6 right-6 z-50" aria-live="polite">
+    {#if toast}
+      <div class="{toast.type === 'success' ? 'alert alert-success' : 'alert alert-danger'} shadow-lg">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" class="mt-0.5 shrink-0" aria-hidden="true">
+          {#if toast.type === 'success'}
+            <path d="M20 6 9 17l-5-5"/>
+          {:else}
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+          {/if}
+        </svg>
+        <span>{toast.text}</span>
+      </div>
+    {/if}
+  </div>
 </main>

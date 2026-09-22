@@ -14,9 +14,19 @@ uses [semver](https://semver.org/spec/v2.0.0.html).
   deleted after `PURGE_STALE_USERS_DAYS` (default 30, 0 disables); admins
   are exempt. Runs with the new cleanup sweep at startup and daily.
 - Cleanup sweep for expired sessions and used/expired OTP codes.
-- Migration 006 adds cascading deletes (scan logs with their QR code,
-  sessions/API keys/presets/campaigns with their user) and an `email`
-  column on `otp_codes`.
+- Active session management: per-account session list (device class,
+  created/expiry) and a "log out everywhere" action
+  (`GET`/`DELETE /api/v1/auth/sessions`).
+- Anonymous QR codes are claimable: creations made while logged out carry a
+  cookie-held claim token, and the dashboard offers to add them to the
+  account on next login (`POST /api/v1/qr/adopt`).
+- Self-service CSV export of a user's QR codes and scan logs
+  (`GET /api/v1/export?type=codes|scans`), linked from the dashboard.
+- `npm run db:backup` — online SQLite backup script (WAL-aware, safe on a
+  live instance), plus expanded backup/restore docs including Litestream.
+- Human-scan analytics: bot/crawler hits are still logged but excluded from
+  scan counts, daily charts, country breakdowns, and admin headline numbers
+  (the admin device breakdown keeps them visible).
 - ESLint, Prettier, a `check` script, Node engines pinning, and a GitHub
   Actions CI workflow (lint, typecheck, unit tests, build, e2e).
 
@@ -29,8 +39,22 @@ uses [semver](https://semver.org/spec/v2.0.0.html).
   reverse proxy no longer share a single bucket.
 - QR API and dashboard responses no longer include `password_hash`
   (a `hasPassword` flag is exposed instead).
+- QR PNG rendering now rasterizes the SVG layout with `@resvg/resvg-js`
+  (prebuilt binaries) instead of node-canvas — one layout implementation for
+  both formats, and the Docker image no longer needs the cairo/pango/jpeg
+  stack (a small font package remains for center-text rendering).
+- Migration SQL is embedded in the server bundle at build time instead of
+  being read from `process.cwd()/src/...`; the Docker image no longer ships
+  a `src/` tree.
+- E2E coverage extended to OTP login/logout, admin authorization, session
+  listing, anonymous claiming, CSV export, and captcha enforcement.
 
 ### Security
+- Session and claim cookies now carry the `Secure` flag only when HTTPS is
+  provable (direct TLS socket or a configured `PROTOCOL_HEADER`).
+  adapter-node currently defaults `url.protocol` to `https` when
+  `PROTOCOL_HEADER` is unset, which silently broke login on bare-HTTP
+  self-hosted deployments (browsers drop `Secure` cookies over http).
 - SSRF guard for QR center-image fetches: private/loopback/link-local
   targets rejected, redirects re-validated per hop, content-type and
   size capped on both the PNG and SVG paths.
@@ -38,10 +62,14 @@ uses [semver](https://semver.org/spec/v2.0.0.html).
   instead of a 500.
 - The abuse-report form action is rate limited (5/min per client), closing
   a spam channel that bypassed the `/api/*` limiter.
+- Dependency refresh: `npm audit` now reports 0 vulnerabilities (includes
+  nodemailer 8 → 10).
 
 ### Fixed
-- Deleting a QR code with scan history no longer fails with a foreign-key
-  error; scan logs cascade with their code.
+- Migration 006 adds cascading deletes (scan logs with their QR code,
+  sessions/API keys/presets/campaigns with their user) and an `email`
+  column on `otp_codes`. Previously, deleting a QR code with scan history
+  failed with a foreign-key error; it now cascades.
 - Migration runner wraps each migration in a transaction (SQL and
   bookkeeping commit together).
 

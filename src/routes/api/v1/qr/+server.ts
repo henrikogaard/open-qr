@@ -6,6 +6,8 @@ import { buildShortUrl } from '$lib/server/urls';
 import { assertSafeTargetUrl } from '$lib/server/url-safety';
 import { assertCanUseCustomSlug } from '$lib/server/custom-slugs';
 import { getCampaign } from '$lib/server/campaigns';
+import { CLAIM_COOKIE, claimCookieOptions, newClaimToken } from '$lib/server/claims';
+import { shouldSecureCookie } from '$lib/server/cookie-secure';
 
 export const GET: RequestHandler = async ({ locals }) => {
   if (!locals.user) {
@@ -16,7 +18,7 @@ export const GET: RequestHandler = async ({ locals }) => {
   return json({ success: true, data: qrCodes });
 };
 
-export const POST: RequestHandler = async ({ request, locals, url }) => {
+export const POST: RequestHandler = async ({ request, locals, url, cookies, platform }) => {
   const preview = url.searchParams.get('preview') === '1';
   const allowAnonymous = getBooleanSetting('ENABLE_ANONYMOUS_CREATION', true);
 
@@ -54,6 +56,16 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
     }
 
     await assertSafeTargetUrl(targetUrl);
+    // Anonymous creates are claimable: reuse (or mint) the browser's claim
+    // token so a later login can adopt these rows.
+    let claimToken: string | null = null;
+    if (!locals.user) {
+      claimToken = cookies.get(CLAIM_COOKIE) ?? null;
+      if (!claimToken) {
+        claimToken = newClaimToken();
+        cookies.set(CLAIM_COOKIE, claimToken, claimCookieOptions(shouldSecureCookie(url, platform)));
+      }
+    }
     const normalizedShortCode = shortCode
       ? assertCanUseCustomSlug(String(shortCode), locals.user)
       : undefined;
@@ -68,7 +80,8 @@ export const POST: RequestHandler = async ({ request, locals, url }) => {
       normalizedShortCode,
       expiresAt,
       password,
-      normalizedCampaignId
+      normalizedCampaignId,
+      claimToken
     );
 
     const shortUrl = buildShortUrl(result.shortCode, url.origin);

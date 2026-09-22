@@ -59,7 +59,11 @@ export const load: PageServerLoad = async ({ params, request, url }) => {
     VALUES (?, ?, ?, ?, ?)
   `).run(qr.id, ipHash, userAgentHash, country, deviceClass);
 
-  incrementScanCount(params.short_code);
-  
+  // scan_count is human scans: crawler hits are logged (row above) but not
+  // counted, so the owner's numbers aren't inflated by bots.
+  if (deviceClass !== 'bot') {
+    incrementScanCount(params.short_code);
+  }
+
   throw redirect(302, qr.target_url);
 };

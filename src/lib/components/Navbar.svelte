@@ -24,22 +24,23 @@
 
 <nav class="sticky top-0 z-40 w-full border-b border-border bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/70">
   <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-    <a href="/" class="group flex items-center gap-2.5">
-      <span class="grid h-7 w-7 place-items-center rounded-md bg-accent text-accent-fg">
+    <a href="/" class="group flex items-center gap-2.5" aria-label="Open-QR home">
+      <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-accent text-accent-fg">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
           <path d="M3 3h7v7H3V3zm2 2v3h3V5H5zm9-2h7v7h-7V3zm2 2v3h3V5h-3zM3 14h7v7H3v-7zm2 2v3h3v-3H5zm9-2h2v2h-2v-2zm4 0h3v2h-2v1h-1v-3zm-4 4h2v3h-2v-3zm4 1h3v2h-3v-2zm-2-1h2v2h-2v-2z"/>
         </svg>
       </span>
-      <span class="text-sm font-semibold tracking-tight text-fg">
+      <span class="hidden text-sm font-semibold tracking-tight text-fg sm:inline">
         Open<span class="text-accent">·</span>QR
       </span>
     </a>
 
     <div class="flex items-center gap-1 sm:gap-2">
       {#if user}
-        <a href="/dashboard" class="hidden sm:inline-flex btn-ghost btn-sm">Dashboard</a>
+        <a href="/dashboard" class="btn-ghost btn-sm">Dashboard</a>
+        <a href="/dashboard/sessions" class="btn-ghost btn-sm">Sessions</a>
         {#if user.isAdmin}
-          <a href="/admin" class="hidden sm:inline-flex btn-ghost btn-sm">Admin</a>
+          <a href="/admin" class="btn-ghost btn-sm">Admin</a>
         {/if}
         <span class="hidden md:inline-block text-xs text-fg-dim font-mono px-2">{user.email}</span>
         <button on:click={logout} class="btn-ghost btn-sm">Log out</button>

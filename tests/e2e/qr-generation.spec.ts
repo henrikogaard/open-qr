@@ -1,6 +1,30 @@
 import { test, expect, request as apiRequest } from '@playwright/test';
 import Database from 'better-sqlite3';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomBytes } from 'node:crypto';
+
+// Mirrors hashSecret() in src/lib/server/auth.ts so tests can seed OTP rows.
+function otpHash(code: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = pbkdf2Sync(code, salt, 120_000, 32, 'sha256').toString('hex');
+  return `pbkdf2_sha256$120000$${salt}$${hash}`;
+}
+
+function seedOtp(email: string, code = '123456'): void {
+  const dbh = db();
+  dbh.prepare('DELETE FROM users WHERE email = ?').run(email);
+  dbh.prepare('INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)').run(
+    email,
+    otpHash(code),
+    new Date(Date.now() + 10 * 60_000).toISOString()
+  );
+  dbh.close();
+}
+
+function promoteAdmin(userId: number): void {
+  const dbh = db();
+  dbh.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
+  dbh.close();
+}
 
 function db() {
   return new Database(process.env.DATABASE_URL || './data/openqr.db');
@@ -267,4 +291,148 @@ test('scanning /go logs country and device class from headers', async ({ baseURL
   cleanup.prepare('DELETE FROM scan_logs WHERE qr_code_id IN (SELECT id FROM qr_codes WHERE user_id = ?)').run(userId);
   cleanup.prepare('DELETE FROM qr_codes WHERE user_id = ?').run(userId);
   cleanup.close();
+});
+
+test('OTP verify issues a working session; wrong codes are rejected', async ({ request }) => {
+  const email = uniqueEmail('login');
+  seedOtp(email);
+
+  const wrong = await request.post('/api/v1/auth/otp/verify', { data: { email, code: '000000' } });
+  expect(wrong.status()).toBe(400);
+
+  const res = await request.post('/api/v1/auth/otp/verify', {
+    data: { email, code: '123456' },
+    headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/605' }
+  });
+  expect(res.ok()).toBeTruthy();
+
+  // The request context keeps the session cookie — /me should resolve.
+  const me = await request.get('/api/v1/auth/me');
+  const meBody = (await me.json()) as { data: { email: string } | null };
+  expect(meBody.data?.email).toBe(email);
+
+  // Account created only at verify time.
+  const dbh = db();
+  const user = dbh.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number };
+  const session = dbh
+    .prepare('SELECT user_agent FROM sessions WHERE user_id = ?')
+    .get(user.id) as { user_agent: string };
+  dbh.close();
+  expect(session.user_agent).toContain('iPhone');
+});
+
+test('logout invalidates the session', async ({ request }) => {
+  const email = uniqueEmail('logout');
+  seedOtp(email);
+  const res = await request.post('/api/v1/auth/otp/verify', { data: { email, code: '123456' } });
+  expect(res.ok()).toBeTruthy();
+
+  const out = await request.post('/api/v1/auth/logout');
+  expect(out.ok()).toBeTruthy();
+
+  const me = await request.get('/api/v1/auth/me');
+  const meBody = (await me.json()) as { data: unknown };
+  expect(meBody.data).toBeNull();
+});
+
+test('session list shows current device; DELETE logs out everywhere', async ({ request }) => {
+  const email = uniqueEmail('sessions');
+  seedOtp(email);
+  expect((await request.post('/api/v1/auth/otp/verify', { data: { email, code: '123456' } })).ok()).toBe(true);
+
+  const list = await request.get('/api/v1/auth/sessions');
+  const body = (await list.json()) as { data: { current: boolean; deviceClass: string }[] };
+  expect(list.ok()).toBeTruthy();
+  expect(body.data.length).toBe(1);
+  expect(body.data[0]!.current).toBe(true);
+
+  const gone = await request.delete('/api/v1/auth/sessions');
+  expect(gone.ok()).toBeTruthy();
+
+  const me = await request.get('/api/v1/auth/me');
+  expect(((await me.json()) as { data: unknown }).data).toBeNull();
+});
+
+test('admin endpoints reject non-admins and serve admins', async ({ baseURL }) => {
+  const admin = createUserSession(uniqueEmail('admin'));
+  promoteAdmin(admin.userId);
+  const pleb = createUserSession(uniqueEmail('pleb'));
+
+  const adminCtx = await authedContext(admin.sessionId, baseURL!);
+  const plebCtx = await authedContext(pleb.sessionId, baseURL!);
+
+  expect((await adminCtx.get('/api/v1/admin/settings')).ok()).toBe(true);
+  expect((await plebCtx.get('/api/v1/admin/settings')).status()).toBe(403);
+
+  await adminCtx.dispose();
+  await plebCtx.dispose();
+});
+
+test('anonymous QR creations are claimable and adoptable after login', async ({ request }) => {
+  // Anonymous create — the context stores the claim cookie.
+  const created = await request.post('/api/v1/qr', { data: { targetUrl: 'https://example.com/claim-me' } });
+  expect(created.ok()).toBeTruthy();
+  const setCookie = created.headers()['set-cookie'] ?? '';
+  const match = /openqr_claims=([0-9a-f]+)/.exec(setCookie);
+  expect(match).not.toBeNull();
+  const claimToken = match![1];
+
+  const { data } = (await created.json()) as { data: { shortCode: string } };
+  const dbh = db();
+  const row = dbh.prepare('SELECT user_id, claim_token FROM qr_codes WHERE short_code = ?').get(data.shortCode) as {
+    user_id: number | null;
+    claim_token: string | null;
+  };
+  expect(row.user_id).toBeNull();
+  expect(row.claim_token).not.toBeNull();
+  dbh.close();
+
+  // A user logged in with that browser cookie adopts the code.
+  const { sessionId } = createUserSession(uniqueEmail('adopter'));
+  const adopt = await request.post('/api/v1/qr/adopt', {
+    headers: { cookie: `auth_session=${sessionId}; openqr_claims=${claimToken}` }
+  });
+  const adoptBody = (await adopt.json()) as { data: { adopted: number } };
+  expect(adoptBody.data.adopted).toBeGreaterThanOrEqual(1);
+
+  const dbh2 = db();
+  const after = dbh2.prepare('SELECT user_id FROM qr_codes WHERE short_code = ?').get(data.shortCode) as {
+    user_id: number | null;
+  };
+  dbh2.close();
+  expect(after.user_id).not.toBeNull();
+});
+
+test('CSV export returns the user\'s codes and scans', async ({ baseURL }) => {
+  const { sessionId } = createUserSession(uniqueEmail('export'));
+  const dbh = db();
+  const { user_id } = dbh.prepare('SELECT id as user_id FROM users ORDER BY id DESC LIMIT 1').get() as { user_id: number };
+  dbh.prepare('INSERT INTO qr_codes (short_code, target_url, user_id) VALUES (?, ?, ?)').run(
+    'export01',
+    'https://example.com/export',
+    user_id
+  );
+  const qrId = dbh.prepare('SELECT id FROM qr_codes WHERE short_code = ?').get('export01') as { id: number };
+  dbh.prepare('INSERT INTO scan_logs (qr_code_id, ip_hash, country, device_class) VALUES (?, ?, ?, ?)').run(
+    qrId.id,
+    'ff00',
+    'DK',
+    'mobile'
+  );
+  dbh.close();
+
+  const ctx = await authedContext(sessionId, baseURL!);
+  const codes = await ctx.get('/api/v1/export?type=codes');
+  expect(codes.ok()).toBeTruthy();
+  expect(codes.headers()['content-type']).toContain('text/csv');
+  const codesCsv = await codes.text();
+  expect(codesCsv).toContain('short_code');
+  expect(codesCsv).toContain('export01');
+
+  const scans = await ctx.get('/api/v1/export?type=scans');
+  const scansCsv = await scans.text();
+  expect(scansCsv).toContain('export01');
+  expect(scansCsv).toContain('DK');
+
+  await ctx.dispose();
 });
