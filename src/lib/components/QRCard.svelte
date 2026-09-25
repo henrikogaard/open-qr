@@ -18,28 +18,43 @@
 </script>
 
 <article class="card flex flex-col gap-4 transition-colors hover:border-border-strong">
-  <header class="flex items-start justify-between gap-3">
-    <div class="min-w-0">
-      <h3 class="truncate text-sm font-semibold text-fg" title={qr.target_url}>{qr.target_url}</h3>
+  <header class="flex items-start gap-3">
+    <a
+      href={`/dashboard/qr/${qr.short_code}`}
+      class="block w-24 shrink-0 overflow-hidden rounded-md border border-border bg-white"
+      aria-hidden="true"
+      tabindex="-1"
+    >
+      <img
+        src={`/api/v1/qr/${qr.short_code}/image`}
+        alt=""
+        loading="lazy"
+        class="aspect-square w-full"
+      />
+    </a>
+    <div class="min-w-0 flex-1">
+      <div class="flex items-start justify-between gap-2">
+        <h3 class="truncate text-sm font-semibold text-fg" title={qr.target_url}>{qr.target_url}</h3>
+        {#if qr.is_active}
+          <span class="badge badge-success shrink-0">Active</span>
+        {:else}
+          <span class="badge badge-neutral shrink-0">Disabled</span>
+        {/if}
+      </div>
       <p class="mt-1 font-mono text-xs text-fg-dim">/go/{qr.short_code}</p>
-    </div>
-    {#if qr.is_active}
-      <span class="badge badge-success">Active</span>
-    {:else}
-      <span class="badge badge-neutral">Disabled</span>
-    {/if}
-  </header>
 
-  <dl class="grid grid-cols-2 gap-3 text-xs">
-    <div>
-      <dt class="text-fg-dim">Scans</dt>
-      <dd class="mt-0.5 font-mono text-sm tabular text-fg">{qr.scan_count}</dd>
+      <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <dt class="text-fg-dim">Scans</dt>
+          <dd class="mt-0.5 font-mono text-sm tabular text-fg">{qr.scan_count}</dd>
+        </div>
+        <div>
+          <dt class="text-fg-dim">Created</dt>
+          <dd class="mt-0.5 text-sm text-fg">{new Date(qr.created_at).toLocaleDateString()}</dd>
+        </div>
+      </dl>
     </div>
-    <div>
-      <dt class="text-fg-dim">Created</dt>
-      <dd class="mt-0.5 text-sm text-fg">{new Date(qr.created_at).toLocaleDateString()}</dd>
-    </div>
-  </dl>
+  </header>
 
   {#if qr.expires_at}
     <p class="rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs text-warning">

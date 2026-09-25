@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount } from 'svelte';
+  import { confirmDialog } from '$lib/stores/confirm';
   import Navbar from '$lib/components/Navbar.svelte';
   
   export let data;
@@ -126,7 +127,13 @@
   }
 
   async function deleteQR(shortCode) {
-    if (!confirm('Delete this QR code?')) return;
+    const ok = await confirmDialog({
+      title: `Delete /go/${shortCode}?`,
+      message: 'Removes the code for every scanner. The owner will not be notified.',
+      confirmLabel: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
     await fetch(`/api/v1/qr/${shortCode}`, { method: 'DELETE' });
     await loadQRs();
     await loadAnalytics();

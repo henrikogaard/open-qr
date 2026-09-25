@@ -1,5 +1,6 @@
 <script>
   import '../styles/app.css';
+  import ConfirmHost from '$lib/components/ConfirmHost.svelte';
 
   export let data;
 </script>
@@ -13,3 +14,5 @@
 <div class="min-h-screen bg-bg text-fg antialiased">
   <slot />
 </div>
+
+<ConfirmHost />

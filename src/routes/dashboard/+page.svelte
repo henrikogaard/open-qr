@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount } from 'svelte';
+  import { confirmDialog } from '$lib/stores/confirm';
   import Navbar from '$lib/components/Navbar.svelte';
   import QRCard from '$lib/components/QRCard.svelte';
   
@@ -80,7 +81,13 @@
 
   /** @param {number} id */
   async function revokeKey(id) {
-    if (!confirm('Revoke this API key? Any tool using it will stop working immediately.')) return;
+    const ok = await confirmDialog({
+      title: 'Revoke API key?',
+      message: 'Any tool or script using this key will stop working immediately.',
+      confirmLabel: 'Revoke',
+      danger: true
+    });
+    if (!ok) return;
     await fetch(`/api/v1/keys/${id}`, { method: 'DELETE' });
     await loadApiKeys();
   }
@@ -98,8 +105,14 @@
   
   /** @param {string} shortCode */
   async function deleteQR(shortCode) {
-    if (!confirm('Are you sure you want to delete this QR code?')) return;
-    
+    const ok = await confirmDialog({
+      title: `Delete /go/${shortCode}?`,
+      message: 'The code stops resolving immediately and cannot be recovered. Scan history is removed with it.',
+      confirmLabel: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
+
     await fetch(`/api/v1/qr/${shortCode}`, { method: 'DELETE' });
     await loadQRCodes();
   }

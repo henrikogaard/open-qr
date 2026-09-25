@@ -2,6 +2,7 @@
   // @ts-nocheck
   import QRPreview from './QRPreview.svelte';
   import { onDestroy, onMount } from 'svelte';
+  import { confirmDialog } from '$lib/stores/confirm';
 
   /** @type {{ id: number; email: string; isAdmin: boolean; termsAcceptedVersion?: string | null } | null | undefined} */
   export let user = null;
@@ -190,7 +191,13 @@
 
   /** @param {number} id */
   async function deletePreset(id) {
-    if (!confirm('Delete this preset?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete preset?',
+      message: 'This styling preset will be removed. QR codes already generated with it are not affected.',
+      confirmLabel: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
     await fetch(`/api/v1/presets/${id}`, { method: 'DELETE' });
     presets = presets.filter((p) => p.id !== id);
   }
@@ -300,6 +307,10 @@
     el.focus();
   }
 
+  /** Preview panel reference for post-generation scrolling on small screens. */
+  /** @type {HTMLElement | undefined} */
+  let previewPanel;
+
   async function generate() {
     const url = normalizeUrl(targetUrl);
     if (!url) {
@@ -337,6 +348,15 @@
       previewUrl = result.data.dataUrl;
       shortUrl = result.data.shortUrl;
       svg = result.data.svg;
+
+      // On small screens the preview sits below the long form — bring the
+      // result into view so the tap visibly did something.
+      if (previewPanel && window.innerWidth < 640) {
+        previewPanel.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          block: 'start'
+        });
+      }
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to generate QR code';
     } finally {
@@ -410,7 +430,7 @@
       </div>
     {/if}
 
-    <div class="space-y-5">
+    <form class="space-y-5" on:submit|preventDefault={generate}>
       <div>
         <label for="target-url" class="field-label">Target URL</label>
         <input
@@ -562,7 +582,7 @@
       {/if}
 
       <button
-        on:click={generate}
+        type="submit"
         disabled={loading || !targetUrl || needsTerms}
         class="btn-primary btn-lg w-full"
       >
@@ -573,10 +593,10 @@
           Generate QR code
         {/if}
       </button>
-    </div>
+    </form>
   </div>
 
-  <aside class="card p-6 sm:p-8 lg:sticky lg:top-24">
+  <aside bind:this={previewPanel} class="card scroll-mt-20 p-6 sm:p-8 lg:sticky lg:top-24">
     <div class="mb-4 flex items-center justify-between">
       <h3 class="text-lg font-semibold text-fg">Preview</h3>
       {#if previewing}

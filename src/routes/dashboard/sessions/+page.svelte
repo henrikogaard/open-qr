@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import Navbar from '$lib/components/Navbar.svelte';
+  import { confirmDialog } from '$lib/stores/confirm';
 
   /** @type {{ user: { id: number; email: string; isAdmin: boolean }, sessions: { current: boolean; deviceClass: string; createdAt: string; expiresAt: string }[] }} */
   export let data;
@@ -19,7 +20,13 @@
   const fmt = (v) => (v.includes('T') ? new Date(v) : new Date(v.replace(' ', 'T') + 'Z')).toLocaleString();
 
   async function logoutEverywhere() {
-    if (!confirm('Log out of all devices? You will need a new code to sign in again.')) return;
+    const ok = await confirmDialog({
+      title: 'Log out of all devices?',
+      message: 'Every active session will be ended, including this one. You will need a new code to sign in again.',
+      confirmLabel: 'Log out everywhere',
+      danger: true
+    });
+    if (!ok) return;
     signingOut = true;
     try {
       await fetch('/api/v1/auth/sessions', { method: 'DELETE' });
