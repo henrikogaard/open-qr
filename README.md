@@ -25,6 +25,12 @@ A self-hosted, open-source QR code generator with optional OTP authentication, a
   - [Generating QR Codes](#generating-qr-codes)
   - [Managing QR Codes](#managing-qr-codes)
   - [Admin Panel](#admin-panel)
+- [Operations](#operations)
+  - [Creating the first admin](#creating-the-first-admin)
+  - [Running a public-facing instance](#running-a-public-facing-instance)
+  - [Block list and suspicious-URL detection](#block-list-and-suspicious-url-detection)
+  - [Abuse reports](#abuse-reports)
+  - [Backup](#backup)
 - [API Documentation](#api-documentation)
   - [Authentication](#authentication)
   - [QR Codes](#qr-codes)
@@ -177,8 +183,9 @@ matter more than individual codes.
 
 **Scan log**
 Each successful redirect records a timestamp, coarse country from trusted proxy
-headers when present, device class, and SHA-256 hashes of IP/User-Agent values.
-Raw IP addresses and raw User-Agent strings are not persisted.
+headers when present, device class, and hashed IP/User-Agent values (the IP
+hash is keyed with a per-install pepper). Raw IP addresses and raw
+User-Agent strings are not persisted.
 
 **Admin settings**
 Most product behavior is stored in SQLite and can be changed at runtime from
@@ -242,14 +249,23 @@ so logged-in users are asked to re-accept the Terms.
 
 ### Upgrade Notes For 1.5.0
 
-Migration `008` adds the static-content `kind` column, the `qr_variants` and
-`webhooks` tables, `scan_logs.variant_id`, and the digest columns on `users`.
-Run migrations before serving traffic:
+Migrations `008` (static-content `kind` column, `qr_variants` and `webhooks`
+tables, `scan_logs.variant_id`, digest columns on `users`) and `009`
+(security hardening — invalidates stored sessions) run automatically at
+startup, or manually before serving traffic:
 
 ```bash
 npm run db:migrate
 npm run db:init   # idempotent; seeds ENABLE_WEEKLY_DIGEST
 ```
+
+After upgrading, expect two one-time effects of the security hardening:
+
+- **Everyone logs in again once** — session ids are now stored hashed, and
+  migration `009` drops pre-existing sessions.
+- **Unique-scan counts see a one-scan boundary** — `ip_hash` is now keyed
+  with a per-install pepper, so a device scanning across the upgrade counts
+  once under the old scheme and once under the new one.
 
 New settings to review after upgrading:
 
@@ -295,17 +311,17 @@ Review these settings after upgrading:
 Open-QR is built as a full-stack SvelteKit application with a focus on simplicity and self-hosting:
 
 ```
-User -> Browser -> SvelteKit (Node.js 24)
+User -> Browser -> SvelteKit (Node.js 22+)
                        |
                        +-> SQLite (better-sqlite3)
-                       +-> QR Generation (qrcode + canvas)
+                       +-> QR Generation (qrcode + @resvg/resvg-js)
                        +-> Email (nodemailer)
 ```
 
 **Why this stack?**
 - **SvelteKit**: Handles both UI and API in a single process
 - **SQLite**: Zero-config, single-file database perfect for self-hosting
-- **Node.js 24**: Latest LTS with best performance
+- **Node.js 22+**: Current LTS line with best performance
 - **Single container**: One Docker image with everything included
 
 ---
@@ -452,8 +468,9 @@ No authentication at all. Everyone can create QR codes but nobody can edit them 
 
 ### Email setup
 
-OTP login codes are the only emails Open-QR sends. The mailer picks a
-provider at startup based on env vars, in this order:
+OTP login codes — and, if you enable it, the weekly scan digest — are the
+emails Open-QR sends. The mailer picks a provider at startup based on env
+vars, in this order:
 
 1. **Resend** (`RESEND_API_KEY`) — HTTP API, no SMTP needed.
 2. **SMTP** (`SMTP_HOST`) — any provider that speaks SMTP.
@@ -628,11 +645,16 @@ per-variant scan attribution on the stats page.
 ### Managing QR Codes
 
 **Authenticated users** can:
-- View all their QR codes on the dashboard (`/dashboard`)
-- Edit target URL, styling, or expiration (with live preview)
-- Enable/disable QR codes
-- Delete QR codes permanently
-- View scan analytics (total scans, daily breakdown, recent scans, country and device-class breakdowns)
+- View all their QR codes on the dashboard (`/dashboard`) — overview tiles,
+  recent scan activity, sorting, compact list view, and load-more pagination
+- Edit target URL, styling, static payloads, or expiration (with live preview)
+- Configure alternative targets: scheduled overrides and A/B splits, with a
+  live split preview and per-variant scan attribution
+- Open a print-ready sheet per code at an exact physical size (20–50 mm)
+- Test a code without a phone via "Open destination" / "View /go page"
+- Enable/disable or delete QR codes
+- View scan analytics (total scans, uniques, ranges, recent scans, country and device-class breakdowns)
+- Subscribe to scan webhooks and the weekly digest email
 - Issue and revoke API keys from the **API keys** section on the dashboard
 - Bulk-create codes by uploading or pasting a CSV at `/dashboard/bulk`
 
@@ -652,10 +674,13 @@ Access the admin panel at `/admin` (admin users only):
 - Remove patterns
 
 **Settings Tab:**
-- Change brand name
-- Configure the public base URL used for generated short links
-- Enable/disable OTP authentication
-- Enable/disable anonymous creation
+- Change brand name, public base URL, and stale-account purge window
+- Enable/disable OTP authentication, anonymous creation, and the login
+  proof-of-work check
+- Toggle custom slugs (and admin-only slugs), the destination interstitial,
+  and the weekly digest email
+- Set default QR template and error correction for new codes
+- Configure threat-intel providers and Plausible analytics
 
 **Analytics Tab:**
 - Total scans, today's scans
@@ -913,6 +938,14 @@ Content-Type: application/json
 DELETE /api/v1/qr/:short_code
 ```
 
+#### QR Image
+```http
+GET /api/v1/qr/:short_code/image              # PNG (dashboard thumbnails)
+GET /api/v1/qr/:short_code/image?format=svg   # lossless SVG (print sheet)
+```
+Owner/admin only; renders the code's stored styling and short URL (static
+kinds render their payload). Cache headers are short so edits refresh.
+
 #### Get QR Stats
 ```http
 GET /api/v1/qr/:short_code/stats?from=2026-09-01T00:00:00Z&to=2026-09-29T23:59:59Z&granularity=day|hour
@@ -964,7 +997,9 @@ an `X-OpenQR-Signature: sha256=<hex>` header — the HMAC-SHA256 of the raw
 body keyed with the webhook's secret, so receivers can verify authenticity.
 Deliveries are fire-and-forget (5s timeout) and never delay a redirect;
 delivery outcomes are recorded per hook. URLs pointing at private/loopback
-addresses are rejected at registration and before every delivery.
+addresses are rejected at registration and before every delivery — including
+redirect hops, which are followed manually and re-validated so a public URL
+that 302s to an internal address never receives the event.
 
 ```http
 GET    /api/v1/webhooks             # list (secret masked)
@@ -1224,12 +1259,22 @@ cloudflared tunnel --url http://localhost:3000
 - **Referential integrity**: scan logs cascade with their QR code,
   sessions/API keys/presets with their user — deleting data never leaves
   orphaned rows or fails on foreign-key constraints.
-- **SSRF guard**: server-side fetches of QR center images reject private,
-  loopback, and link-local addresses, and re-validate every redirect hop.
-- **Password hashing**: PBKDF2-SHA256, 120k iterations (used for QR-code
-  password gates and OTP code storage).
-- **API key storage**: tokens stored as SHA-256 hash; the plaintext is shown
-  exactly once at issuance.
+- **SSRF guard**: server-side fetches of QR center images and webhook
+  deliveries reject private, loopback, and link-local addresses, and
+  re-validate every redirect hop.
+- **Password-gate throttling**: 10 attempts per 5 minutes per IP+code on the
+  `/go/` gate, enforced before the hashing work.
+- **Security headers**: nonce-based CSP (Plausible-aware when enabled),
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+  `Permissions-Policy`, and HSTS on every response.
+- **Password hashing**: PBKDF2-SHA256 at 600k iterations (QR-code password
+  gates; older gates rehash transparently on successful entry).
+- **Token storage**: API keys and session ids are stored hashed — a leaked
+  database exposes neither. Plaintext values are shown exactly once.
+- **IP hashing**: scan `ip_hash` values are keyed with a per-install pepper,
+  so a leaked database can't be dictionary-attacked across the IPv4 space.
+- **CSV export**: cells that could execute as spreadsheet formulas are
+  neutralized.
 - **SQL**: prepared statements with parameter binding throughout — no string
   interpolation into queries.
 
@@ -1239,7 +1284,8 @@ cloudflared tunnel --url http://localhost:3000
 
 Open-QR is designed with privacy as a core principle:
 
-- **No raw IP addresses**: All IPs are SHA-256 hashed before storage
+- **No raw IP addresses**: All IPs are hashed with a per-install key before
+  storage
 - **No fingerprinting**: No browser fingerprinting or unique visitor tracking
 - **No third-party services by default**: No Google Analytics and no external trackers unless the operator enables an optional integration
 - **Optional Plausible**: Operators can enable Plausible in the admin panel; doing so adds a third-party/self-hosted analytics script and should be reflected in the operator's privacy notice
