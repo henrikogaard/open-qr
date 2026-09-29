@@ -4,7 +4,7 @@ import { db } from '$lib/db';
 import { nanoid } from 'nanoid';
 import { isAllowedScheme, isBlacklisted } from './blacklist';
 import { hashSecret, verifySecret } from './auth';
-import { getNumberSetting } from './settings';
+import { getNumberSetting, getSetting } from './settings';
 import { fetchPublicImage } from './net-guard';
 import { hashClaimToken } from './claims';
 
@@ -118,15 +118,32 @@ function buildMatrix(targetUrl: string, ec: QRCode.QRCodeErrorCorrectionLevel): 
   };
 }
 
+export interface RenderOptions {
+  /**
+   * Encode the string as-is, skipping the URL scheme allow-list. Only for
+   * validated static payloads (WiFi/vCard/…) — dynamic codes must keep the
+   * check so arbitrary strings can't be smuggled in via the URL path.
+   */
+  raw?: boolean;
+  /** PNG output width in pixels (SVG scales losslessly to any size). */
+  pngSize?: number;
+}
+
 export async function generateQRImage(
   targetUrl: string,
-  style: QRStyle = {}
+  style: QRStyle = {},
+  options: RenderOptions = {}
 ): Promise<string> {
   // Rendered by rasterizing generateQRSVG's output: one layout implementation
   // for both formats (previously canvas and SVG drifted independently), and
   // no native cairo/pango stack — resvg ships prebuilt binaries.
-  const svg = await generateQRSVG(targetUrl, style);
-  const png = new Resvg(svg).render().asPng();
+  const svg = await generateQRSVG(targetUrl, style, options);
+  const resvg = new Resvg(svg, {
+    ...(options.pngSize && options.pngSize > 0
+      ? { fitTo: { mode: 'width' as const, value: options.pngSize } }
+      : {})
+  });
+  const png = resvg.render().asPng();
   return `data:image/png;base64,${png.toString('base64')}`;
 }
 
@@ -179,9 +196,10 @@ async function resolveInlineImage(imageUrl: string): Promise<string | null> {
 
 export async function generateQRSVG(
   targetUrl: string,
-  style: QRStyle = {}
+  style: QRStyle = {},
+  options: RenderOptions = {}
 ): Promise<string> {
-  assertEncodableUrl(targetUrl);
+  if (!options.raw) assertEncodableUrl(targetUrl);
 
   const ec = resolveErrorCorrection(style);
   const tpl = resolveTemplate(style);
@@ -264,27 +282,41 @@ export function createQRCode(
   expiresAt?: string,
   password?: string,
   campaignId?: number | null,
-  claimToken?: string | null
+  claimToken?: string | null,
+  kind: string = 'url'
 ): { shortCode: string } {
-  assertUsableTargetUrl(targetUrl);
+  // Static kinds store a validated payload (built by qr-payloads.ts) rather
+  // than a navigable URL; the redirect-time URL checks don't apply.
+  if (kind === 'url') {
+    assertUsableTargetUrl(targetUrl);
+  }
   assertUnderQuota(userId);
 
   const code = shortCode || generateShortCode();
-  
+
+  // Admin-configured defaults (DEFAULT_TEMPLATE / DEFAULT_ERROR_CORRECTION)
+  // fill in whatever the request omitted, so the API and UI agree.
+  const templates = ['default', 'minimal', 'colorful', 'rounded', 'dark'];
+  const ecLevels = ['L', 'M', 'Q', 'H'];
+  const defaultTemplate = getSetting('DEFAULT_TEMPLATE', 'default');
+  const defaultEc = getSetting('DEFAULT_ERROR_CORRECTION', 'M').toUpperCase();
+  const fallbackTemplate = templates.includes(defaultTemplate) ? defaultTemplate : 'default';
+  const fallbackEc = ecLevels.includes(defaultEc) ? defaultEc : 'M';
+
   db.prepare(`
     INSERT INTO qr_codes (
       short_code, target_url, user_id, expires_at, password_hash,
       template, foreground_color, background_color, border_size, border_style,
       center_type, center_image_url, center_text, center_text_color, error_correction,
-      campaign_id, claim_token
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      campaign_id, claim_token, kind
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     code,
     targetUrl,
     userId,
     expiresAt || null,
     password ? hashSecret(password) : null,
-    style.template || 'default',
+    style.template || fallbackTemplate,
     style.foregroundColor || '#000000',
     style.backgroundColor || '#FFFFFF',
     style.borderSize || 'medium',
@@ -293,13 +325,14 @@ export function createQRCode(
     style.centerImageUrl || null,
     style.centerText || null,
     style.centerTextColor || '#000000',
-    style.errorCorrection || 'M',
+    style.errorCorrection || fallbackEc,
     campaignId || null,
     // Only meaningful for anonymous creates (userId null): lets the creating
     // browser adopt these rows into an account later.
-    !userId && claimToken ? hashClaimToken(claimToken) : null
+    !userId && claimToken ? hashClaimToken(claimToken) : null,
+    kind
   );
-  
+
   return { shortCode: code };
 }
 
@@ -324,9 +357,9 @@ export function updateQRCode(shortCode: string, updates: Partial<any>) {
     'target_url', 'expires_at', 'password_hash', 'is_active',
     'template', 'foreground_color', 'background_color', 'border_size', 'border_style',
     'center_type', 'center_image_url', 'center_text', 'center_text_color', 'error_correction',
-    'campaign_id'
+    'campaign_id', 'kind'
   ];
-  
+
   const fields = Object.keys(updates).filter(f => allowedFields.includes(f));
   if (fields.length === 0) return;
   const updateValues = updates as Record<string, unknown>;
@@ -337,7 +370,18 @@ export function updateQRCode(shortCode: string, updates: Partial<any>) {
       throw new Error('Target URL is required');
     }
 
-    assertUsableTargetUrl(targetUrl);
+    // A static row's target_url holds its encoded payload, not a URL the
+    // redirector will send scanners to — the payload builders already
+    // validated it, so the URL checks only apply to dynamic (url) codes.
+    const row = db.prepare('SELECT kind FROM qr_codes WHERE short_code = ?').get(shortCode) as
+      | { kind: string }
+      | undefined;
+    const kind = fields.includes('kind') && typeof updateValues.kind === 'string'
+      ? updateValues.kind
+      : (row?.kind ?? 'url');
+    if (kind === 'url') {
+      assertUsableTargetUrl(targetUrl);
+    }
   }
 
   if (fields.includes('password_hash') && updates.password_hash) {

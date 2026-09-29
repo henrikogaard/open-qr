@@ -1,11 +1,22 @@
 <script lang="ts">
   import type { PageData } from './$types';
+  import type { ActionData } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data, form }: { data: PageData; form: ActionData } = $props();
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
   }
+
+  const staticLabels: Record<string, string> = {
+    text: 'Plain text',
+    wifi: 'Wi-Fi network',
+    vcard: 'Contact card',
+    event: 'Calendar event',
+    email: 'Email',
+    sms: 'SMS',
+    geo: 'Location'
+  };
 </script>
 
 <main class="min-h-screen bg-bg flex items-center justify-center px-4 py-12">
@@ -22,6 +33,18 @@
       <a href={`/report/${data.shortCode}`} class="btn-secondary flex-1 justify-center">Report QR</a>
     </div>
   </section>
+  {:else if data.staticContent}
+  <section class="w-full max-w-lg card p-8">
+    <div class="mb-6">
+      <p class="eyebrow">Static QR code</p>
+      <h1 class="mt-2 text-2xl font-semibold text-fg">{staticLabels[data.staticKind] ?? 'Content'}</h1>
+      <p class="mt-2 text-sm text-fg-muted">
+        This QR encodes its content directly — scanning it opens this on the phone
+        without passing through this server. This page is just what the code contains.
+      </p>
+    </div>
+    <pre class="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg-soft px-3 py-2 font-mono text-xs leading-relaxed text-fg">{data.staticContent}</pre>
+  </section>
   {:else}
   <section class="w-full max-w-sm card p-8">
     <div class="mb-6 flex items-center gap-3">
@@ -37,7 +60,7 @@
       </div>
     </div>
 
-    <form method="GET" class="space-y-4">
+    <form method="POST" action="?/password" class="space-y-4">
       <div>
         <label for="qr-password" class="field-label">Password</label>
         <input
@@ -50,7 +73,11 @@
         />
       </div>
 
-      {#if data.invalidPassword}
+      {#if form?.throttled}
+        <div class="alert alert-warning">
+          <span>Too many attempts — wait a few minutes and try again.</span>
+        </div>
+      {:else if form?.invalid}
         <div class="alert alert-danger">
           <span>Incorrect password.</span>
         </div>

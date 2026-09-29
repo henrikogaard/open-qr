@@ -1,12 +1,13 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getQRCode, generateQRImage } from '$lib/server/qr';
+import { getQRCode, generateQRImage, generateQRSVG } from '$lib/server/qr';
 import { buildShortUrl } from '$lib/server/urls';
 
 /**
  * Renders this code's QR — its short URL plus stored styling — as PNG bytes
- * for dashboard thumbnails. Same access rule as GET /api/v1/qr/[short_code].
- * Short max-age so cards refresh after an edit without hammering the renderer.
+ * (default, dashboard thumbnails) or as lossless SVG (?format=svg, print
+ * sheet). Same access rule as GET /api/v1/qr/[short_code]. Short max-age so
+ * cards refresh after an edit without hammering the renderer.
  */
 export const GET: RequestHandler = async ({ params, locals, url }) => {
   if (!locals.user) {
@@ -31,8 +32,22 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
     centerTextColor: qr.center_text_color,
     errorCorrection: qr.error_correction
   };
-  const shortUrl = buildShortUrl(params.short_code, url.origin);
-  const dataUrl = await generateQRImage(shortUrl, style);
+  // Static codes render their stored payload; dynamic codes render the short URL.
+  const isStatic = qr.kind && qr.kind !== 'url';
+  const encoded = isStatic ? qr.target_url : buildShortUrl(params.short_code, url.origin);
+  const renderOptions = isStatic ? { raw: true } : {};
+
+  if (url.searchParams.get('format') === 'svg') {
+    const svg = await generateQRSVG(encoded, style, renderOptions);
+    return new Response(svg, {
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'private, max-age=60'
+      }
+    });
+  }
+
+  const dataUrl = await generateQRImage(encoded, style, renderOptions);
   const bytes = Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
 
   return new Response(bytes, {

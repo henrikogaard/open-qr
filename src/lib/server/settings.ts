@@ -41,6 +41,17 @@ export function ensureCaptchaSecret(): void {
   }
 }
 
+/**
+ * Per-install pepper for scan ip_hash values. An unsalted SHA-256 of an IP
+ * is dictionary-attackable across the small IPv4 space if the DB leaks;
+ * keying the hash makes the stored values install-specific.
+ */
+export function ensureIpHashPepper(): void {
+  if (!getSetting('IP_HASH_PEPPER', '')) {
+    setSetting('IP_HASH_PEPPER', randomBytes(32).toString('hex'));
+  }
+}
+
 export function initDefaultSettings(): void {
   const defaults: Record<string, string> = {
     'ENABLE_OTP_AUTH': 'true',
@@ -66,6 +77,7 @@ export function initDefaultSettings(): void {
     'ENABLE_CUSTOM_SLUGS': 'false',
     'CUSTOM_SLUGS_ADMIN_ONLY': 'true',
     'ENABLE_DESTINATION_INTERSTITIAL': 'false',
+    'ENABLE_WEEKLY_DIGEST': 'false',
     'RATE_LIMIT_PER_MINUTE': '60',
     'MAX_QR_PER_USER': '0',
     'ENABLE_SIGNUP_CAPTCHA': 'true',
@@ -86,4 +98,6 @@ export function initDefaultSettings(): void {
   // Per-install random key for signing captcha challenges — not a fixed
   // default, so challenges can't be forged against a known secret.
   ensureCaptchaSecret();
+  // Per-install pepper for scan ip_hash values (see ensureIpHashPepper).
+  ensureIpHashPepper();
 }

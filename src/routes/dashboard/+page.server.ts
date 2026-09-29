@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { CLAIM_COOKIE, countClaimableQrCodes, hashClaimToken } from '$lib/server/claims';
+import { dashboardOverview } from '$lib/server/dashboard-stats';
 
 export const load: PageServerLoad = async ({ locals, cookies }) => {
   if (!locals.user) {
@@ -13,6 +14,7 @@ export const load: PageServerLoad = async ({ locals, cookies }) => {
 
   return {
     user: locals.user,
-    adoptableCount
+    adoptableCount,
+    overview: dashboardOverview(locals.user.id)
   };
 };

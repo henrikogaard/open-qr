@@ -41,9 +41,11 @@ function createUserSession(email: string): { userId: number; sessionId: string }
   const userId = Number(userResult.lastInsertRowid);
   const sessionId = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  // Sessions are stored hashed (auth.ts hashSessionId) — the cookie keeps
+  // the raw token, so the seed must store its sha256.
   database
     .prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(sessionId, userId, expiresAt);
+    .run(createHash('sha256').update(sessionId).digest('hex'), userId, expiresAt);
   database.close();
   return { userId, sessionId };
 }
@@ -79,8 +81,8 @@ test('live preview renders without clicking generate', async ({ page }) => {
   await page.getByLabel(/I agree to the Terms of Use/).check();
   await page.fill('input[type="url"]', 'https://example.com');
   await expect(page.locator('img[alt="QR Code"]')).toBeVisible({ timeout: 10000 });
-  await expect(page.getByRole('link', { name: 'PNG' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'SVG' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'PNG' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'SVG' })).toBeVisible();
 });
 
 test('persisted QR exposes a short URL', async ({ page }) => {
@@ -263,7 +265,8 @@ test('scanning /go logs country and device class from headers', async ({ baseURL
   );
 
   const anon = await apiRequest.newContext({ baseURL: baseURL! });
-  const res = await anon.get(`/go/${shortCode}`, {
+  // ?continue=1 keeps this immune to the interstitial toggle in redirect-flows.spec.ts.
+  const res = await anon.get(`/go/${shortCode}?continue=1`, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
       'CF-IPCountry': 'NO',

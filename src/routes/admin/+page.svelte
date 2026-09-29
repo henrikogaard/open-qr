@@ -7,6 +7,7 @@
   export let data;
   
   let activeTab = 'qrs';
+  let loading = true;
   let qrCodes = [];
   let blacklist = { enabled: true, suspiciousEnabled: true, patterns: [] };
   let settings = {};
@@ -38,6 +39,7 @@
     ENABLE_CUSTOM_SLUGS: 'custom slugs',
     CUSTOM_SLUGS_ADMIN_ONLY: 'custom-slug admin limit',
     ENABLE_DESTINATION_INTERSTITIAL: 'destination interstitial',
+    ENABLE_WEEKLY_DIGEST: 'weekly scan digests',
     ENABLE_SIGNUP_CAPTCHA: 'login verification',
     PURGE_STALE_USERS_DAYS: 'stale account purge',
     ENABLE_THREAT_INTEL: 'external URL checks',
@@ -62,13 +64,17 @@
   });
   
   async function loadData() {
-    await Promise.all([
-      loadQRs(),
-      loadBlacklist(),
-      loadSettings(),
-      loadAnalytics(),
-      loadReports()
-    ]);
+    try {
+      await Promise.all([
+        loadQRs(),
+        loadBlacklist(),
+        loadSettings(),
+        loadAnalytics(),
+        loadReports()
+      ]);
+    } finally {
+      loading = false;
+    }
   }
   
   async function loadQRs() {
@@ -227,7 +233,9 @@
     {/each}
   </div>
 
-  {#if activeTab === 'qrs'}
+  {#if loading}
+    <div class="card grid place-items-center py-16 text-sm text-fg-dim" role="status">Loading…</div>
+  {:else if activeTab === 'qrs'}
     <div class="card-flush overflow-hidden">
       <div class="overflow-x-auto">
         <table class="table">
@@ -350,6 +358,13 @@
         <span>Show destination interstitial before redirects</span>
       </label>
       <label class="flex items-start gap-2 text-sm text-fg">
+        <input type="checkbox" checked={settings.ENABLE_WEEKLY_DIGEST === 'true'} on:change={(e) => toggleSetting('ENABLE_WEEKLY_DIGEST', e.target.checked)} class="checkbox mt-0.5" />
+        <span>
+          <span class="block font-medium">Allow weekly scan digests</span>
+          <span class="mt-1 block text-xs text-fg-dim">Users can then opt into a weekly email summarizing their scans. Requires mail (Resend/SMTP) to be configured.</span>
+        </span>
+      </label>
+      <label class="flex items-start gap-2 text-sm text-fg">
         <input type="checkbox" checked={settings.ENABLE_SIGNUP_CAPTCHA !== 'false'} on:change={(e) => toggleSetting('ENABLE_SIGNUP_CAPTCHA', e.target.checked)} class="checkbox mt-0.5" />
         <span>
           <span class="block font-medium">Require human verification at login</span>
@@ -361,6 +376,28 @@
         <input id="purge-stale-users" type="number" min="0" value={settings.PURGE_STALE_USERS_DAYS ?? '30'} on:blur={(e) => updateSetting('PURGE_STALE_USERS_DAYS', e.target.value)} class="input" />
         <p class="mt-1.5 text-xs text-fg-dim">Accounts with no QR codes, API keys, or sessions are deleted after this many days. 0 disables purging. Admins are never purged.</p>
       </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="default-template" class="field-label">Default template</label>
+          <select id="default-template" value={settings.DEFAULT_TEMPLATE || 'default'} on:change={(e) => updateSetting('DEFAULT_TEMPLATE', e.target.value)} class="select">
+            <option value="default">Default</option>
+            <option value="minimal">Minimal</option>
+            <option value="colorful">Colorful</option>
+            <option value="rounded">Rounded</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div>
+          <label for="default-error-correction" class="field-label">Default error correction</label>
+          <select id="default-error-correction" value={settings.DEFAULT_ERROR_CORRECTION || 'M'} on:change={(e) => updateSetting('DEFAULT_ERROR_CORRECTION', e.target.value)} class="select">
+            <option value="L">Low (7%)</option>
+            <option value="M">Medium (15%)</option>
+            <option value="Q">Quartile (25%)</option>
+            <option value="H">High (30%)</option>
+          </select>
+        </div>
+      </div>
+      <p class="text-xs text-fg-dim">Applied to the public generator and the API when a request omits styling.</p>
     </div>
 
     <div class="card p-6 sm:p-8 space-y-5">

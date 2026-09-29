@@ -127,4 +127,41 @@ describe('qr module', () => {
     expect(png).toMatch(/^data:image\/png;base64,/);
     expect(png.length).toBeGreaterThan(5_000);
   });
+
+  it('should create static-kind codes without URL safety checks', () => {
+    // A WIFI: payload is not a URL — the URL allow-list must not apply.
+    const { shortCode } = createQRCode('WIFI:T:WPA;S:Net;P:pw;;', null, {}, undefined, undefined, undefined, undefined, undefined, 'wifi');
+    const qr = getQRCode(shortCode);
+    expect(qr.kind).toBe('wifi');
+    expect(qr.target_url).toBe('WIFI:T:WPA;S:Net;P:pw;;');
+  });
+
+  it('should still enforce URL safety for url-kind codes', () => {
+    expect(() => createQRCode('WIFI:T:WPA;S:Net;P:pw;;', null, {}, undefined, undefined, undefined, undefined, undefined, 'url')).toThrow();
+  });
+
+  it('should render static payloads with raw mode', async () => {
+    const payload = 'WIFI:T:WPA;S:Net;P:pw;;';
+    const svg = await generateQRSVG(payload, {}, { raw: true });
+    expect(svg).toContain('<svg');
+    // Without raw, the scheme allow-list rejects the non-URL payload.
+    await expect(generateQRSVG(payload)).rejects.toThrow();
+  });
+
+  it('should allow static payload edits but re-validate URL edits', () => {
+    const { shortCode } = createQRCode('hello', null, {}, undefined, undefined, undefined, undefined, undefined, 'text');
+    updateQRCode(shortCode, { target_url: 'hello again' });
+    expect(getQRCode(shortCode).target_url).toBe('hello again');
+
+    // Switching the row back to url kind re-arms the URL checks.
+    expect(() => updateQRCode(shortCode, { kind: 'url' })).not.toThrow();
+    expect(() => updateQRCode(shortCode, { target_url: 'javascript:alert(1)' })).toThrow();
+  });
+
+  it('should rasterize PNGs at requested sizes', async () => {
+    const png = await generateQRImage('https://example.com', {}, { pngSize: 1200 });
+    const raw = Buffer.from(png.split(',')[1]!, 'base64');
+    expect(raw.readUInt32BE(16)).toBe(1200); // IHDR width
+    expect(raw.readUInt32BE(20)).toBe(1200); // IHDR height
+  });
 });

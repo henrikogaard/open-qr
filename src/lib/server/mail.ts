@@ -59,21 +59,54 @@ async function sendViaResend(to: string, subject: string, text: string, html: st
   }
 }
 
+async function deliver(to: string, subject: string, text: string, html: string): Promise<void> {
+  switch (pickProvider()) {
+    case 'resend':
+      await sendViaResend(to, subject, text, html);
+      return;
+    case 'smtp':
+      await smtpTransporter!.sendMail({ from: fromAddress(), to, subject, text, html });
+      return;
+    case 'console':
+      // Logs the body too — for OTP this is what finishes a dev login without
+      // configured mail; the README documents this flow.
+      console.log(`[DEV MODE] email to ${to} — ${subject}\n${text}`);
+      return;
+  }
+}
+
 export async function sendOTP(email: string, code: string): Promise<void> {
   const brandName = getSetting('BRAND_NAME', 'Open-QR');
   const subject = `Your ${brandName} login code`;
   const text = `Your verification code is: ${code}\n\nThis code expires in 10 minutes.`;
   const html = `<p>Your verification code is: <strong>${code}</strong></p><p>This code expires in 10 minutes.</p>`;
+  await deliver(email, subject, text, html);
+}
 
-  switch (pickProvider()) {
-    case 'resend':
-      await sendViaResend(email, subject, text, html);
-      return;
-    case 'smtp':
-      await smtpTransporter!.sendMail({ from: fromAddress(), to: email, subject, text, html });
-      return;
-    case 'console':
-      console.log(`[DEV MODE] OTP for ${email}: ${code}`);
-      return;
-  }
+export interface DigestEmailData {
+  totalScans: number;
+  topCodes: { shortCode: string; targetUrl: string; count: number }[];
+}
+
+export async function sendDigest(email: string, data: DigestEmailData): Promise<void> {
+  const brandName = getSetting('BRAND_NAME', 'Open-QR');
+  const subject = `Your weekly ${brandName} scan report — ${data.totalScans} scans`;
+
+  const lines = [
+    `Your QR codes were scanned ${data.totalScans} time${data.totalScans === 1 ? '' : 's'} in the last 7 days.`,
+    '',
+    ...data.topCodes.map((c) => `  /go/${c.shortCode} — ${c.count} scans — ${c.targetUrl}`),
+    '',
+    'Manage your codes in the dashboard.'
+  ];
+
+  const listItems = data.topCodes
+    .map(
+      (c) =>
+        `<li><a href="/dashboard/qr/${c.shortCode}/stats">/go/${c.shortCode}</a> — ${c.count} scans<br><span style="color:#666">${c.targetUrl}</span></li>`
+    )
+    .join('');
+  const html = `<p>Your QR codes were scanned <strong>${data.totalScans}</strong> time${data.totalScans === 1 ? '' : 's'} in the last 7 days.</p><ul>${listItems}</ul><p>Manage your codes in the dashboard.</p>`;
+
+  await deliver(email, subject, lines.join('\n'), html);
 }

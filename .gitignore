@@ -15,6 +15,9 @@
 /test-results
 /coverage
 
+# Browser-harness screenshots (ui-browser-test.mjs / ui-visual-tour.mjs output)
+/gui-test-screenshots
+
 # Env / secrets
 .env
 .env.local
