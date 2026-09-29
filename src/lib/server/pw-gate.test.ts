@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { issuePwGate, pwCookieName, verifyPwGate } from './pw-gate';
+import { clearPwAttempts, consumePwAttempt, issuePwGate, pwCookieName, verifyPwGate } from './pw-gate';
 import { setSetting } from './settings';
 import { randomBytes } from 'crypto';
 
@@ -47,5 +47,22 @@ describe('pw-gate', () => {
     const gate = issuePwGate('abc12345');
     setSetting('CAPTCHA_SECRET', randomBytes(16).toString('hex'));
     expect(verifyPwGate('abc12345', gate.value)).toBe(false);
+  });
+
+  it('throttles gate attempts per code+IP and resets on success', () => {
+    const code = 'thr1234' + randomBytes(2).toString('hex');
+    const ip = '198.51.100.7';
+    for (let i = 0; i < 10; i++) {
+      expect(consumePwAttempt(code, ip)).toBe(true);
+    }
+    expect(consumePwAttempt(code, ip)).toBe(false); // locked out
+
+    // Other scanners (different IP) are unaffected.
+    expect(consumePwAttempt(code, '198.51.100.8')).toBe(true);
+    // The same IP on a different code is a separate bucket.
+    expect(consumePwAttempt(code + 'x', ip)).toBe(true);
+
+    clearPwAttempts(code, ip);
+    expect(consumePwAttempt(code, ip)).toBe(true);
   });
 });

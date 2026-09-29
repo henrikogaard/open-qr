@@ -1,8 +1,9 @@
 import { json, type Handle } from '@sveltejs/kit';
+import { randomBytes } from 'crypto';
 import { getUserBySession } from '$lib/server/auth';
 import { extractApiKey, getUserByApiKey } from '$lib/server/api-keys';
 import { runMigrations } from '$lib/db/schema';
-import { getNumberSetting, initDefaultSettings } from '$lib/server/settings';
+import { getBooleanSetting, getNumberSetting, getSetting, initDefaultSettings } from '$lib/server/settings';
 import { buildLimiterKey, checkRateLimit } from '$lib/server/rate-limit';
 import { runCleanup } from '$lib/server/cleanup';
 import { maybeSendWeeklyDigests } from '$lib/server/digest';
@@ -26,6 +27,57 @@ if (!process.env.VITEST) {
   const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
   const cleanupTimer = setInterval(housekeeping, CLEANUP_INTERVAL_MS);
   cleanupTimer.unref();
+}
+
+/**
+ * Baseline security headers for every response. Scripts are allowed via a
+ * per-request nonce (applied to every <script> in rendered pages, including
+ * SvelteKit's inline bootstrap, whose content is build-specific) plus the
+ * hash-pinned theme boot script in app.html. When Plausible is enabled its
+ * origin joins script-src/connect-src. Styles allow inline because the UI
+ * uses inline style attributes for bars/widths; images allow data: for
+ * rendered QR previews. API JSON responses carry the headers too — harmless
+ * there, and the SVG image endpoint is same-origin content worth covering.
+ */
+function securityHeaders(nonce: string): Record<string, string> {
+  const csp = [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'sha256-frqyjPWhIXir+MfBr6EbtUOUK3064INJ4PP3YzvEh8E='`,
+    "style-src 'self' 'unsafe-inline' https://rsms.me https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com https://rsms.me",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    // Deliberately broad: a form POST to a gated /go/<code> ends in a 302 to
+    // the (cross-origin) destination, and form-action governs every hop of a
+    // form submission — 'self' would break the redirector's core flow. The
+    // scheme restriction still blocks data:/javascript: exfiltration.
+    "form-action 'self' http: https:",
+    "frame-ancestors 'none'"
+  ];
+
+  if (getBooleanSetting('ENABLE_PLAUSIBLE', false)) {
+    const src = getSetting('PLAUSIBLE_SCRIPT_SRC', 'https://plausible.io/js/script.js').trim();
+    try {
+      const origin = new URL(src).origin;
+      csp[1] += ` ${origin}`;
+      csp[5] = `connect-src 'self' ${origin}`;
+    } catch {
+      /* a bad admin value degrades to the default policy */
+    }
+  }
+
+  return {
+    'Content-Security-Policy': csp.join('; '),
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    // Ignored by browsers on plain-HTTP responses, so safe for bare-HTTP
+    // self-hosting while still protecting HTTPS deployments.
+    'Strict-Transport-Security': 'max-age=31536000'
+  };
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -78,5 +130,15 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
   }
 
-  return resolve(event);
+  // Per-request CSP nonce: applied to every <script> in rendered pages so
+  // SvelteKit's build-specific inline bootstrap is allowed without widening
+  // script-src beyond 'self' + nonce.
+  const nonce = randomBytes(16).toString('base64');
+  const response = await resolve(event, {
+    transformPageChunk: ({ html }) => html.replace(/<script/g, `<script nonce="${nonce}"`)
+  });
+  for (const [key, value] of Object.entries(securityHeaders(nonce))) {
+    response.headers.set(key, value);
+  }
+  return response;
 };

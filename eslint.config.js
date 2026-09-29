@@ -37,7 +37,9 @@ export default tseslint.config(
     }
   },
   {
-    files: ['scripts/**', 'browser-regression.mjs'],
-    languageOptions: { globals: { ...globals.node } }
+    // Browser-harness scripts drive Chromium from Node and also touch
+    // window/document globals inside page.evaluate().
+    files: ['scripts/**', 'browser-regression.mjs', 'ui-browser-test.mjs', 'ui-visual-tour.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } }
   }
 );

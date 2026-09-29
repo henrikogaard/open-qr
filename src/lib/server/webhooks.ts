@@ -71,6 +71,53 @@ export interface WebhookDeps {
 }
 
 /**
+ * POST to a webhook with the same redirect discipline as fetchPublicImage:
+ * redirects are followed manually and every hop re-validated against the
+ * SSRF guard — a public URL that 302s to a metadata/internal address must
+ * never receive the delivery (and must not become a port-scanning oracle
+ * via last_status).
+ */
+async function deliverHop(
+  hook: Webhook,
+  body: string,
+  signature: string,
+  fetcher: NonNullable<WebhookDeps['fetcher']>
+): Promise<void> {
+  let current = await assertPublicHttpUrl(hook.url);
+  for (let hops = 0; hops < 3; hops++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    let res: Response;
+    try {
+      res = await fetcher(current, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-OpenQR-Event': 'scan',
+          'X-OpenQR-Signature': signature
+        },
+        body,
+        signal: controller.signal,
+        redirect: 'manual'
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get('location');
+      if (!location) throw new Error('Redirect without a location');
+      res.body?.cancel();
+      current = await assertPublicHttpUrl(new URL(location, current).toString());
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return;
+  }
+  throw new Error('Too many redirects while delivering');
+}
+
+/**
  * Fan out a scan event to the owner's active webhooks. Never throws — a
  * misconfigured receiver must not take down redirects. Delivery status is
  * recorded per webhook so the dashboard can show the last outcome.
@@ -88,25 +135,8 @@ export async function deliverScanEvent(userId: number, event: ScanWebhookEvent, 
     hooks.map(async (hook) => {
       let status: string;
       try {
-        await assertPublicHttpUrl(hook.url);
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
-        let res: Response;
-        try {
-          res = await fetcher(hook.url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-OpenQR-Event': 'scan',
-              'X-OpenQR-Signature': signWebhookBody(hook.secret, body)
-            },
-            body,
-            signal: controller.signal
-          });
-        } finally {
-          clearTimeout(timer);
-        }
-        status = res.ok ? 'ok' : `HTTP ${res.status}`;
+        await deliverHop(hook, body, signWebhookBody(hook.secret, body), fetcher);
+        status = 'ok';
       } catch (err: any) {
         status = `error: ${err?.name === 'AbortError' ? 'timeout' : (err?.message || 'delivery failed')}`;
       }

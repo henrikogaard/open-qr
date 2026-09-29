@@ -15,6 +15,38 @@ import { getSetting } from './settings';
 
 const PW_GATE_TTL_MS = 10 * 60_000;
 
+// --- Gate attempt throttling -------------------------------------------------
+// The /go/ password action sits outside the /api rate limiter, and every
+// attempt pays a full PBKDF2 — without a cap it's both a brute-force channel
+// and a cheap CPU-exhaustion vector. In-memory, per IP+code, same pattern
+// as the OTP throttles (fine for the single-node self-hosted deployment).
+const PW_ATTEMPT_LIMIT = 10;
+const PW_ATTEMPT_WINDOW_MS = 5 * 60_000;
+const pwAttempts = new Map<string, number[]>();
+
+function attemptKey(shortCode: string, ip: string): string {
+  return `${shortCode}|${ip}`;
+}
+
+/** True (and consumes an attempt slot) when the caller may try a password. */
+export function consumePwAttempt(shortCode: string, ip: string): boolean {
+  const key = attemptKey(shortCode, ip);
+  const cutoff = Date.now() - PW_ATTEMPT_WINDOW_MS;
+  const attempts = (pwAttempts.get(key) || []).filter((t) => t > cutoff);
+  if (attempts.length >= PW_ATTEMPT_LIMIT) {
+    pwAttempts.set(key, attempts);
+    return false;
+  }
+  attempts.push(Date.now());
+  pwAttempts.set(key, attempts);
+  return true;
+}
+
+/** Clears the counter after a success so the gate isn't sticky for scanners. */
+export function clearPwAttempts(shortCode: string, ip: string): void {
+  pwAttempts.delete(attemptKey(shortCode, ip));
+}
+
 export function pwCookieName(shortCode: string): string {
   return `openqr_pw_${shortCode}`;
 }

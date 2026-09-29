@@ -16,4 +16,11 @@ describe('toCsv', () => {
     const rows = [['short_code', 'x, y'], ['abc', 'He said "hi"']];
     expect(parseCsv(toCsv(rows))).toEqual(rows);
   });
+
+  it('neutralizes spreadsheet formula injection without touching typed numbers', () => {
+    expect(toCsv([['=WEBSERVICE("http://evil")']])).toContain("'=WEBSERVICE");
+    expect(toCsv([['@SUM(A1)', 'cmd']])).toBe("'@SUM(A1),cmd\r\n");
+    // Typed numbers keep their sign; only string cells get the apostrophe.
+    expect(toCsv([[-2, 42]])).toBe('-2,42\r\n');
+  });
 });

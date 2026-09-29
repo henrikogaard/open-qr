@@ -77,6 +77,30 @@ uses [semver](https://semver.org/spec/v2.0.0.html).
 - Dev-mode (no mail provider) OTP logging now goes through the generic mail
   console path: `[DEV MODE] email to <addr> — <subject>\n<body>`.
 
+### Security
+- Webhook deliveries no longer follow redirects blindly: every hop is
+  re-validated against the SSRF guard, so a public endpoint that 302s to
+  loopback/metadata addresses can't use the app as a delivery proxy or a
+  port-scanning oracle.
+- The `/go/` password gate is throttled (10 attempts per 5 minutes per
+  IP+code) — previously unlimited guesses, each costing the server a full
+  PBKDF2 run.
+- Security headers on every response: CSP (nonce-based script policy,
+  Plausible-aware), `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, HSTS.
+- Session ids are now stored hashed (like API keys); a leaked database no
+  longer hands over active sessions. Migration `009` invalidates existing
+  sessions — everyone logs in again once after upgrading.
+- Scan `ip_hash` values are keyed with a per-install pepper instead of raw
+  SHA-256, so a leaked DB can't be dictionary-attacked across the IPv4
+  space. Unique-scan counts treat pre/post-upgrade hashes as distinct
+  devices for the boundary scan.
+- Password hashing ratcheted from PBKDF2 120k to 600k iterations
+  (OWASP guidance); existing gates rehash transparently on successful
+  entry.
+- CSV export neutralizes spreadsheet formula injection (cells starting
+  with `=`, `+`, `-`, `@`).
+
 ### Upgrade notes
 - Run `npm run db:migrate` (migration `008` adds `qr_codes.kind`, the
   `qr_variants` + `webhooks` tables, `scan_logs.variant_id`, and the digest

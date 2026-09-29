@@ -1,6 +1,6 @@
 import { test, expect, request as apiRequest } from '@playwright/test';
 import Database from 'better-sqlite3';
-import { pbkdf2Sync, randomBytes } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 // Redirect-flow coverage for the paths unit tests can't reach end to end:
 // password gate (now a POST action — no secret in the URL), the destination
@@ -55,9 +55,10 @@ function setSetting(key: string, value: string): void {
 function sessionFor(userId: number): string {
   const sessionId = randomBytes(32).toString('hex');
   const dbh = db();
+  // Sessions are stored hashed — seed the sha256 of the cookie token.
   dbh
     .prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(sessionId, userId, new Date(Date.now() + 60 * 60 * 1000).toISOString());
+    .run(createHash('sha256').update(sessionId).digest('hex'), userId, new Date(Date.now() + 60 * 60 * 1000).toISOString());
   dbh.close();
   return sessionId;
 }
@@ -81,6 +82,28 @@ test('password gate: wrong password is rejected, correct password redirects and 
   // The gate is a POST action — the secret must never ride in the URL.
   expect(page.url()).not.toContain('password');
   expect(page.url()).not.toContain('hunter2');
+});
+
+test('password gate throttles repeated failures from one IP', async ({ page }) => {
+  const userId = seedUser();
+  const shortCode = seedQr(userId, { password_hash: secretHash('hunter2') });
+  await page.goto(`/go/${shortCode}`);
+
+  // Ten failures burn the per-IP+code budget…
+  for (let i = 0; i < 10; i++) {
+    await page.fill('#qr-password', 'wrong');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByText('Incorrect password.').waitFor();
+  }
+  // …the 11th is refused before the PBKDF2 work runs — even with the right
+  // password, so lockout can't be brute-forced past.
+  await page.fill('#qr-password', 'wrong');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByText('Too many attempts')).toBeVisible();
+
+  await page.fill('#qr-password', 'hunter2');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByText('Too many attempts')).toBeVisible();
 });
 
 test('expired codes return 410 Gone', async ({ request }) => {

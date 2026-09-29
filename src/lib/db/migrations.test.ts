@@ -50,8 +50,10 @@ describe('migration 006 (foreign keys) against legacy data', () => {
     const otp = legacy.prepare('SELECT email FROM otp_codes WHERE id = 1').get() as { email: string };
     expect(otp.email).toBe('owner@example.com');
 
+    // Migration 009 hashes session ids at rest; legacy plaintext sessions
+    // can't be re-hashed in SQL, so the migration wipes them (one re-login).
     const session = legacy.prepare('SELECT id FROM sessions WHERE id = ?').get('sess1');
-    expect(session).toBeDefined();
+    expect(session).toBeUndefined();
 
     // Deleting the QR cascades to its scan logs (pre-006 this DELETE threw
     // FOREIGN KEY constraint failed); the orphan survives.

@@ -11,6 +11,7 @@ import {
   verifyOTP
 } from './auth';
 import { db } from '$lib/db';
+import { createHash } from 'crypto';
 
 function createUser(email: string): number {
   const result = db.prepare('INSERT INTO users (email) VALUES (?)').run(email);
@@ -75,8 +76,9 @@ describe('auth module', () => {
   it('should invalidate expired sessions', () => {
     const userId = createUser('test@example.com');
     const sessionId = createSession(userId);
-    // Manually expire the session
-    db.prepare("UPDATE sessions SET expires_at = datetime('now', '-1 day') WHERE id = ?").run(sessionId);
+    // Manually expire the session (rows store the hashed id)
+    db.prepare("UPDATE sessions SET expires_at = datetime('now', '-1 day') WHERE id = ?")
+      .run(createHash('sha256').update(sessionId).digest('hex'));
 
     const user = getUserBySession(sessionId);
     expect(user).toBeNull();
@@ -86,7 +88,7 @@ describe('auth module', () => {
     const userId = createUser('test@example.com');
     const sessionId = createSession(userId);
     db.prepare('UPDATE sessions SET expires_at = ? WHERE id = ?')
-      .run(new Date(Date.now() - 60_000).toISOString(), sessionId);
+      .run(new Date(Date.now() - 60_000).toISOString(), createHash('sha256').update(sessionId).digest('hex'));
 
     const user = getUserBySession(sessionId);
     expect(user).toBeNull();
@@ -196,5 +198,14 @@ describe('auth module', () => {
   it('should reject invalid OTP', () => {
     const result = verifyOTP('test@example.com', '000000');
     expect(result.success).toBe(false);
+  });
+
+  it('stores session ids hashed — the raw cookie token never appears at rest', () => {
+    const userId = createUser('hash-session@example.com');
+    const sessionId = createSession(userId, 'UA');
+    const row = db.prepare('SELECT id FROM sessions WHERE user_id = ?').get(userId) as { id: string };
+    expect(row.id).not.toBe(sessionId);
+    expect(row.id).toBe(createHash('sha256').update(sessionId).digest('hex'));
+    expect(getUserBySession(sessionId)?.id).toBe(userId);
   });
 });

@@ -41,9 +41,11 @@ function createUserSession(email: string): { userId: number; sessionId: string }
   const userId = Number(userResult.lastInsertRowid);
   const sessionId = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  // Sessions are stored hashed (auth.ts hashSessionId) — the cookie keeps
+  // the raw token, so the seed must store its sha256.
   database
     .prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(sessionId, userId, expiresAt);
+    .run(createHash('sha256').update(sessionId).digest('hex'), userId, expiresAt);
   database.close();
   return { userId, sessionId };
 }

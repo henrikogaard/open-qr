@@ -94,4 +94,62 @@ describe('webhooks', () => {
 
     expect(listWebhooks(userId)[0].last_status).toMatch(/^error: /);
   });
+
+  it('never follows redirects to private addresses (SSRF bypass)', async () => {
+    const userId = createUser('redirect@example.com');
+    await createWebhook(userId, PUBLIC_HOOK_URL);
+
+    const calls: string[] = [];
+    const fetcher = (async (url: string) => {
+      calls.push(String(url));
+      return new Response(null, {
+        status: 302,
+        headers: { location: 'http://169.254.169.254/latest/meta-data' }
+      });
+    }) as typeof fetch;
+
+    await deliverScanEvent(userId, {
+      event: 'scan',
+      shortCode: 'abc12345',
+      targetUrl: 'https://example.com',
+      variantLabel: null,
+      timestamp: '2030-01-01T00:00:00.000Z',
+      country: null,
+      deviceClass: 'mobile'
+    }, { fetcher });
+
+    // The only fetch is the original public endpoint — the metadata redirect
+    // was rejected at validation, before any request to it.
+    expect(calls).toEqual([PUBLIC_HOOK_URL]);
+    expect(listWebhooks(userId)[0].last_status).toMatch(/private or local address/);
+  });
+
+  it('follows redirects through public hops and delivers to the final target', async () => {
+    const userId = createUser('hop@example.com');
+    await createWebhook(userId, PUBLIC_HOOK_URL);
+    const FINAL_URL = 'http://203.0.113.20/final';
+
+    const calls: { url: string; method: string }[] = [];
+    const fetcher = (async (url: string, init: RequestInit) => {
+      calls.push({ url: String(url), method: init.method || 'GET' });
+      if (String(url) === PUBLIC_HOOK_URL) {
+        return new Response(null, { status: 302, headers: { location: FINAL_URL } });
+      }
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+
+    await deliverScanEvent(userId, {
+      event: 'scan',
+      shortCode: 'abc12345',
+      targetUrl: 'https://example.com',
+      variantLabel: null,
+      timestamp: '2030-01-01T00:00:00.000Z',
+      country: null,
+      deviceClass: 'mobile'
+    }, { fetcher });
+
+    expect(calls.map((c) => c.url)).toEqual([PUBLIC_HOOK_URL, FINAL_URL]);
+    expect(calls.every((c) => c.method === 'POST')).toBe(true);
+    expect(listWebhooks(userId)[0].last_status).toBe('ok');
+  });
 });

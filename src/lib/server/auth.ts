@@ -1,10 +1,13 @@
 import { db } from '$lib/db';
-import { pbkdf2Sync, randomBytes, randomInt, timingSafeEqual } from 'crypto';
+import { createHash, pbkdf2Sync, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { sendOTP } from './mail';
 import { detectDeviceClass } from './scan-meta';
 
 const HASH_PREFIX = 'pbkdf2_sha256';
-const HASH_ITERATIONS = 120_000;
+// OWASP 2023 guidance for PBKDF2-HMAC-SHA256 is 600k iterations. Existing
+// hashes carry their own (lower) iteration count and stay verifiable; QR
+// gate passwords are transparently rehashed on successful verify.
+const HASH_ITERATIONS = 600_000;
 const HASH_KEYLEN = 32;
 const HASH_DIGEST = 'sha256';
 const otpSendAttempts = new Map<string, number[]>();
@@ -65,13 +68,21 @@ export function generateOTP(): string {
   return randomInt(100000, 1000000).toString();
 }
 
+/**
+ * Session ids are stored hashed — same rule as API keys. A leaked database
+ * must not hand over every active session; the cookie keeps the raw token.
+ */
+function hashSessionId(sessionId: string): string {
+  return createHash('sha256').update(sessionId).digest('hex');
+}
+
 export function createSession(userId: number, userAgent?: string | null): string {
   const sessionId = randomBytes(32).toString('hex');
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
 
   db.prepare('INSERT INTO sessions (id, user_id, expires_at, user_agent) VALUES (?, ?, ?, ?)')
-    .run(sessionId, userId, expiresAt.toISOString(), userAgent ? userAgent.slice(0, 250) : null);
+    .run(hashSessionId(sessionId), userId, expiresAt.toISOString(), userAgent ? userAgent.slice(0, 250) : null);
 
   return sessionId;
 }
@@ -93,7 +104,7 @@ export function listSessions(userId: number, currentSessionId: string | null): S
   `).all(userId) as { id: string; user_agent: string | null; created_at: string; expires_at: string }[];
 
   return rows.map((row) => ({
-    current: row.id === currentSessionId,
+    current: row.id === (currentSessionId ? hashSessionId(currentSessionId) : ''),
     deviceClass: detectDeviceClass(row.user_agent),
     createdAt: row.created_at,
     expiresAt: row.expires_at
@@ -110,7 +121,7 @@ export function getUserBySession(sessionId: string): { id: number; email: string
     FROM sessions s 
     JOIN users u ON s.user_id = u.id 
     WHERE s.id = ?
-  `).get(sessionId) as any;
+  `).get(hashSessionId(sessionId)) as any;
   
   if (!session) return null;
   if (isExpired(session.expires_at)) {
@@ -126,7 +137,7 @@ export function getUserBySession(sessionId: string): { id: number; email: string
 }
 
 export function destroySession(sessionId: string): void {
-  db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+  db.prepare('DELETE FROM sessions WHERE id = ?').run(hashSessionId(sessionId));
 }
 
 export function resetOtpRateLimits(): void {

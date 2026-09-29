@@ -1,12 +1,12 @@
 import { redirect, error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { getQRCode, incrementScanCount, verifyQRPassword } from '$lib/server/qr';
+import { getQRCode, incrementScanCount, updateQRCode, verifyQRPassword } from '$lib/server/qr';
 import { db } from '$lib/db';
-import { createHash } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { detectCountry, detectDeviceClass } from '$lib/server/scan-meta';
-import { getBooleanSetting } from '$lib/server/settings';
+import { getBooleanSetting, getSetting } from '$lib/server/settings';
 import { resolveTarget } from '$lib/server/variants';
-import { issuePwGate, pwCookieName, verifyPwGate } from '$lib/server/pw-gate';
+import { clearPwAttempts, consumePwAttempt, issuePwGate, pwCookieName, verifyPwGate } from '$lib/server/pw-gate';
 import { deliverScanEvent } from '$lib/server/webhooks';
 import { shouldSecureCookie } from '$lib/server/cookie-secure';
 
@@ -56,9 +56,13 @@ export const load: PageServerLoad = async ({ params, request, url, cookies }) =>
 
   // Log scan. Country comes from an upstream-proxy header (Cloudflare, Vercel,
   // Fly, etc.) before the raw IP is hashed; device class is derived from the UA
-  // string before it is hashed. Raw identifiers never reach storage.
+  // string before it is hashed. Raw identifiers never reach storage — and the
+  // IP hash is keyed with a per-install pepper so a leaked DB can't be
+  // dictionary-attacked across the (small) IPv4 space.
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
-  const ipHash = createHash('sha256').update(ip).digest('hex');
+  const ipHash = createHmac('sha256', getSetting('IP_HASH_PEPPER', ''))
+    .update(ip)
+    .digest('hex');
   const userAgent = request.headers.get('user-agent') || '';
   const userAgentHash = createHash('sha256').update(userAgent).digest('hex');
   const country = detectCountry(request.headers);
@@ -92,9 +96,16 @@ export const load: PageServerLoad = async ({ params, request, url, cookies }) =>
 };
 
 export const actions: Actions = {
-  password: async ({ params, request, cookies, url, platform }) => {
+  password: async ({ params, request, cookies, url, platform, getClientAddress }) => {
     const qr = loadActiveQr(params.short_code);
     if (!qr.password_hash) throw redirect(302, url.pathname);
+
+    // Throttle BEFORE the PBKDF2 work so locked-out callers cost (almost)
+    // nothing; the same caller scanning again after success is unaffected.
+    const clientIp = getClientAddress();
+    if (!consumePwAttempt(params.short_code, clientIp)) {
+      return fail(429, { throttled: true });
+    }
 
     const formData = await request.formData();
     const password = formData.get('password');
@@ -102,6 +113,13 @@ export const actions: Actions = {
       // fail() re-runs load (which returns the password form) and surfaces
       // `form.invalid` to the page.
       return fail(401, { invalid: true });
+    }
+    clearPwAttempts(params.short_code, clientIp);
+
+    // Rehash-on-verify: gates hashed before the PBKDF2 ratchet are upgraded
+    // transparently on successful entry.
+    if (qr.password_hash.includes('$120000$')) {
+      updateQRCode(params.short_code, { password_hash: password });
     }
 
     const gate = issuePwGate(params.short_code);

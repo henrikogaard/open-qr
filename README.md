@@ -198,6 +198,8 @@ provider credentials, remains in environment variables.
 9. Decide whether scanners should see the destination interstitial before redirect.
 10. Back up the SQLite database file regularly.
 
+Rate limiting and scan attribution trust `CF-Connecting-IP` / `X-Forwarded-For` when present — correct behind a proxy, spoofable when exposed directly. Don't expose the app to the internet without a proxy that overwrites those headers (`ADDRESS_HEADER` documents the same trade-off).
+
 ### URL Safety Layers
 
 Open-QR uses multiple layers because no single list catches everything:

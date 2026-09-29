@@ -73,7 +73,11 @@
         />
       </div>
 
-      {#if form?.invalid}
+      {#if form?.throttled}
+        <div class="alert alert-warning">
+          <span>Too many attempts — wait a few minutes and try again.</span>
+        </div>
+      {:else if form?.invalid}
         <div class="alert alert-danger">
           <span>Incorrect password.</span>
         </div>

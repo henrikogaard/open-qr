@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import Database from 'better-sqlite3';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 // Coverage for the 1.5.0 UI polish pass: dashboard overview + activity feed,
 // the first-run checklist, the variant split bar, the print sheet, and the
@@ -40,9 +40,10 @@ function seedQr(userId: number, overrides: Record<string, unknown> = {}): string
 function seedSession(userId: number): string {
   const sessionId = randomBytes(32).toString('hex');
   const dbh = db();
+  // Sessions are stored hashed — seed the sha256 of the cookie token.
   dbh
     .prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(sessionId, userId, new Date(Date.now() + 60 * 60 * 1000).toISOString());
+    .run(createHash('sha256').update(sessionId).digest('hex'), userId, new Date(Date.now() + 60 * 60 * 1000).toISOString());
   dbh.close();
   return sessionId;
 }
@@ -71,6 +72,18 @@ async function login(page: import('@playwright/test').Page, sessionId: string): 
     { name: 'auth_session', value: sessionId, domain: '127.0.0.1', path: '/', httpOnly: true }
   ]);
 }
+
+test('security headers are present on pages and API responses', async ({ request }) => {
+  const page = await request.get('/');
+  const h = page.headers();
+  expect(h['content-security-policy']).toContain("default-src 'self'");
+  expect(h['content-security-policy']).toContain('frame-ancestors');
+  expect(h['x-content-type-options']).toBe('nosniff');
+  expect(h['x-frame-options']).toBe('DENY');
+
+  const api = await request.get('/api/v1/health');
+  expect(api.headers()['content-security-policy']).toBeTruthy();
+});
 
 test('dashboard shows overview tiles and the recent activity feed (bots excluded)', async ({ page }) => {
   const userId = seedUser();
