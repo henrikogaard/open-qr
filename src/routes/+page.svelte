@@ -4,7 +4,7 @@
   import Footer from '$lib/components/Footer.svelte';
   import { appVersion } from '$lib/version';
 
-  /** @type {{ user?: { id: number; email: string; isAdmin: boolean; termsAcceptedVersion?: string | null } | null; termsVersion?: string; featureFlags?: { customSlugsEnabled?: boolean; customSlugsAdminOnly?: boolean } }} */
+  /** @type {{ user?: { id: number; email: string; isAdmin: boolean; termsAcceptedVersion?: string | null } | null; termsVersion?: string; featureFlags?: { customSlugsEnabled?: boolean; customSlugsAdminOnly?: boolean }; defaults?: { template: string; errorCorrection: string } }} */
   export let data;
 
   const features = [
@@ -132,7 +132,7 @@
       {/if}
     </div>
 
-    <QRGenerator user={data?.user} termsVersion={data?.termsVersion ?? ''} featureFlags={data?.featureFlags || {}} />
+    <QRGenerator user={data?.user} termsVersion={data?.termsVersion ?? ''} featureFlags={data?.featureFlags || {}} defaults={data?.defaults || { template: 'default', errorCorrection: 'M' }} />
   </div>
 </section>
 

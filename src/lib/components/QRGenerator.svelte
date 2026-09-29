@@ -3,38 +3,34 @@
   import QRPreview from './QRPreview.svelte';
   import { onDestroy, onMount } from 'svelte';
   import { confirmDialog } from '$lib/stores/confirm';
+  import { EMPTY_UTM, appendUtmParams } from '$lib/utm';
 
   /** @type {{ id: number; email: string; isAdmin: boolean; termsAcceptedVersion?: string | null } | null | undefined} */
   export let user = null;
   /** Current required Terms version (from layout data). */
   export let termsVersion = '';
   export let featureFlags = {};
+  /** Admin-configured generator defaults (DEFAULT_TEMPLATE / DEFAULT_ERROR_CORRECTION). */
+  export let defaults = { template: 'default', errorCorrection: 'M' };
 
+  let kind = 'url';
   let targetUrl = '';
-  let template = 'default';
+  let template = defaults.template || 'default';
   let foregroundColor = '#000000';
   let backgroundColor = '#FFFFFF';
   let borderSize = 'medium';
   let borderStyle = 'solid';
   let centerType = 'none';
+  let centerImageUrl = '';
   let centerText = '';
   let centerTextColor = '#000000';
-  let errorCorrection = 'M';
+  let errorCorrection = defaults.errorCorrection || 'M';
   let expiresAt = '';
   let password = '';
   let customSlug = '';
   let campaignId = '';
   let campaigns = [];
   let newCampaignName = '';
-
-  let previewUrl = '';
-  let shortUrl = '';
-  let svg = '';
-  let loading = false;
-  let previewing = false;
-  let error = '';
-  /** Earliest selectable expiry (client clock), set on mount to avoid SSR mismatch. */
-  let minExpiresAt = '';
 
   /** @type {Array<{ id: number; name: string; template: string; foregroundColor: string; backgroundColor: string; borderSize: string; borderStyle: string; centerType: string; centerText: string; centerTextColor: string; errorCorrection: string }>} */
   let presets = [];
@@ -45,7 +41,45 @@
   let savingPreset = false;
   let presetMessage = '';
 
+  // Static payload forms, one object per content type. Field names and
+  // validation live server-side (qr-payloads.ts); the UI just collects them.
+  let payload = {
+    text: { text: '' },
+    wifi: { ssid: '', password: '', encryption: 'WPA', hidden: false },
+    vcard: { firstName: '', lastName: '', org: '', title: '', phone: '', email: '', url: '', address: '', note: '' },
+    event: { title: '', location: '', start: '', end: '', allDay: false, description: '' },
+    email: { to: '', subject: '', body: '' },
+    sms: { phone: '', message: '' },
+    geo: { lat: '', lng: '' }
+  };
+
+  let utmOpen = false;
+  let utm = { ...EMPTY_UTM };
+
+  let previewUrl = '';
+  let shortUrl = '';
+  let generatedCode = '';
+  let svg = '';
+  let loading = false;
+  let previewing = false;
+  let error = '';
+  /** Earliest selectable expiry (client clock), set on mount to avoid SSR mismatch. */
+  let minExpiresAt = '';
+
   $: isAuthed = !!user;
+  $: isStatic = kind !== 'url';
+  $: finalTargetUrl = isStatic ? '' : appendUtmParams(normalizeUrl(targetUrl), utm);
+
+  const KIND_OPTIONS = [
+    { value: 'url', label: 'Website URL (tracked)' },
+    { value: 'wifi', label: 'Wi-Fi network' },
+    { value: 'vcard', label: 'Contact card (vCard)' },
+    { value: 'event', label: 'Calendar event' },
+    { value: 'text', label: 'Plain text' },
+    { value: 'email', label: 'Email' },
+    { value: 'sms', label: 'SMS' },
+    { value: 'geo', label: 'Location' }
+  ];
 
   // Terms acceptance gate. Logged-in: persisted server-side per user. Anonymous:
   // persisted in localStorage. The gate is a UX check — the legal cover comes
@@ -54,12 +88,113 @@
   const TERMS_LOCAL_KEY = 'open-qr-terms-accepted';
   let termsAccepted = false;
 
+  // --- Draft persistence -----------------------------------------------------
+  // The landing form is long; a refresh shouldn't cost the user their input.
+  // Passwords and one-shot fields (custom slug, campaign) stay out of storage.
+  // Saving is gated until the stored draft has been restored — reactive
+  // statements run at init with default values and would otherwise clobber
+  // the draft before onMount gets to read it.
+  const DRAFT_KEY = 'open-qr-draft';
+  let draftReady = false;
+
+  function saveDraft() {
+    try {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          kind, targetUrl,
+          template, foregroundColor, backgroundColor, borderSize, borderStyle,
+          centerType, centerImageUrl, centerText, centerTextColor, errorCorrection,
+          payload, utm, expiresAt
+        })
+      );
+    } catch { /* ignore */ }
+  }
+
+  function restoreDraft() {
+    let d;
+    try {
+      d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    } catch {
+      return;
+    }
+    if (!d || typeof d !== 'object') return;
+
+    if (typeof d.kind === 'string' && payload[d.kind]) kind = d.kind;
+    if (typeof d.targetUrl === 'string') targetUrl = d.targetUrl;
+    if (typeof d.template === 'string') template = d.template;
+    if (/^#[0-9a-f]{6}$/i.test(d.foregroundColor || '')) foregroundColor = d.foregroundColor;
+    if (/^#[0-9a-f]{6}$/i.test(d.backgroundColor || '')) backgroundColor = d.backgroundColor;
+    if (typeof d.borderSize === 'string') borderSize = d.borderSize;
+    if (typeof d.borderStyle === 'string') borderStyle = d.borderStyle;
+    if (typeof d.centerType === 'string') centerType = d.centerType;
+    if (typeof d.centerImageUrl === 'string') centerImageUrl = d.centerImageUrl;
+    if (typeof d.centerText === 'string') centerText = d.centerText;
+    if (/^#[0-9a-f]{6}$/i.test(d.centerTextColor || '')) centerTextColor = d.centerTextColor;
+    if (typeof d.errorCorrection === 'string') errorCorrection = d.errorCorrection;
+    if (typeof d.expiresAt === 'string') expiresAt = d.expiresAt;
+
+    if (d.payload && typeof d.payload === 'object') {
+      for (const k of Object.keys(payload)) {
+        const saved = d.payload[k];
+        if (!saved || typeof saved !== 'object') continue;
+        for (const field of Object.keys(payload[k])) {
+          const value = saved[field];
+          // Booleans, strings and numbers keep their type; everything else
+          // (undefined, arrays, objects) falls back to the default.
+          if (typeof value === 'boolean' || typeof value === 'string' || typeof value === 'number') {
+            payload[k][field] = value;
+          }
+        }
+      }
+    }
+    if (d.utm && typeof d.utm === 'object') {
+      for (const field of Object.keys(utm)) {
+        if (typeof d.utm[field] === 'string') utm[field] = d.utm[field];
+      }
+    }
+  }
+
+  function clearForm() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+    kind = 'url';
+    targetUrl = '';
+    applyStyle({ template: defaults.template || 'default', errorCorrection: defaults.errorCorrection || 'M' });
+    centerImageUrl = '';
+    payload = {
+      text: { text: '' },
+      wifi: { ssid: '', password: '', encryption: 'WPA', hidden: false },
+      vcard: { firstName: '', lastName: '', org: '', title: '', phone: '', email: '', url: '', address: '', note: '' },
+      event: { title: '', location: '', start: '', end: '', allDay: false, description: '' },
+      email: { to: '', subject: '', body: '' },
+      sms: { phone: '', message: '' },
+      geo: { lat: '', lng: '' }
+    };
+    utm = { ...EMPTY_UTM };
+    expiresAt = '';
+    password = '';
+    customSlug = '';
+    error = '';
+  }
+
+  /** @param {KeyboardEvent} ev */
+  function onKeydown(ev) {
+    // Native Enter already submits from single-line inputs; this makes it
+    // work from textareas (the plain-text kind) and anywhere else.
+    if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+      ev.preventDefault();
+      generate();
+    }
+  }
+
   $: needsTerms = !termsAccepted && termsVersion !== '';
 
   onMount(() => {
     minExpiresAt = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
       .toISOString()
       .slice(0, 16);
+    restoreDraft();
+    draftReady = true;
     if (isAuthed) {
       termsAccepted = user?.termsAcceptedVersion === termsVersion;
       loadPresets();
@@ -221,11 +356,15 @@
       borderSize,
       borderStyle,
       centerType,
+      centerImageUrl: centerType === 'image' ? centerImageUrl : undefined,
       centerText,
       centerTextColor,
       errorCorrection
     };
   }
+
+  /** True when the current form has enough input to attempt a render. */
+  $: hasInput = isStatic ? true : Boolean(targetUrl.trim());
 
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let debounceHandle;
@@ -233,8 +372,7 @@
   let inflight;
 
   async function runPreview() {
-    const url = normalizeUrl(targetUrl);
-    if (!url) {
+    if (!hasInput) {
       previewUrl = '';
       svg = '';
       error = '';
@@ -254,7 +392,7 @@
       const response = await fetch('/api/v1/qr?preview=1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUrl: url, style: buildStyle() }),
+        body: JSON.stringify(isStatic ? { kind, payload: payload[kind], style: buildStyle() } : { targetUrl: finalTargetUrl, style: buildStyle() }),
         signal: inflight.signal
       });
       const result = await response.json();
@@ -277,23 +415,40 @@
     debounceHandle = setTimeout(runPreview, 200);
   }
 
-  // Live preview: re-run whenever any style/url input changes — including the
-  // terms gate, so accepting consent immediately renders a pending preview
-  // (and un-accepting clears one).
+  // Live preview: re-run whenever any style/url/payload input changes —
+  // including the terms gate, so accepting consent immediately renders a
+  // pending preview (and un-accepting clears one).
   $: previewDeps = [
+    kind,
     targetUrl,
+    payload.text.text,
+    payload.wifi.ssid, payload.wifi.password, payload.wifi.encryption, payload.wifi.hidden,
+    payload.vcard.firstName, payload.vcard.lastName, payload.vcard.org, payload.vcard.title,
+    payload.vcard.phone, payload.vcard.email, payload.vcard.url, payload.vcard.address, payload.vcard.note,
+    payload.event.title, payload.event.location, payload.event.start, payload.event.end, payload.event.allDay, payload.event.description,
+    payload.email.to, payload.email.subject, payload.email.body,
+    payload.sms.phone, payload.sms.message,
+    payload.geo.lat, payload.geo.lng,
     template,
     foregroundColor,
     backgroundColor,
     borderSize,
     borderStyle,
     centerType,
+    centerImageUrl,
     centerText,
     centerTextColor,
     errorCorrection,
-    needsTerms
+    needsTerms,
+    expiresAt,
+    utm.source, utm.medium, utm.campaign, utm.term, utm.content
   ];
-  $: if (previewDeps) schedulePreview();
+  // Re-render the preview and persist the draft whenever any input changes —
+  // restoring a draft fires both, exactly like the user re-typing it.
+  $: if (previewDeps) {
+    schedulePreview();
+    if (draftReady) saveDraft();
+  }
 
   onDestroy(() => {
     clearTimeout(debounceHandle);
@@ -312,9 +467,8 @@
   let previewPanel;
 
   async function generate() {
-    const url = normalizeUrl(targetUrl);
-    if (!url) {
-      error = 'Target URL is required';
+    if (!hasInput) {
+      error = isStatic ? 'Please fill in the content fields' : 'Target URL is required';
       return;
     }
     if (needsTerms) {
@@ -330,12 +484,14 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          targetUrl: url,
+          ...(isStatic
+            ? { kind, payload: payload[kind] }
+            : { targetUrl: finalTargetUrl }),
           style: buildStyle(),
           shortCode: customSlug || undefined,
           campaignId: campaignId || undefined,
-          expiresAt: expiresAt || undefined,
-          password: password || undefined
+          expiresAt: !isStatic && expiresAt ? expiresAt : undefined,
+          password: !isStatic && password ? password : undefined
         })
       });
 
@@ -346,7 +502,8 @@
       }
 
       previewUrl = result.data.dataUrl;
-      shortUrl = result.data.shortUrl;
+      shortUrl = result.data.shortUrl || '';
+      generatedCode = result.data.shortCode || '';
       svg = result.data.svg;
 
       // On small screens the preview sits below the long form — bring the
@@ -364,6 +521,8 @@
     }
   }
 </script>
+
+<svelte:window on:keydown={onKeydown} />
 
 <div class="grid gap-6 lg:grid-cols-[1fr_360px] lg:items-start">
   <div class="card p-6 sm:p-8">
@@ -432,15 +591,201 @@
 
     <form class="space-y-5" on:submit|preventDefault={generate}>
       <div>
-        <label for="target-url" class="field-label">Target URL</label>
-        <input
-          id="target-url"
-          type="url"
-          bind:value={targetUrl}
-          placeholder="https://example.com"
-          class="input"
-        />
+        <label for="content-type" class="field-label">Content type</label>
+        <select id="content-type" bind:value={kind} class="select">
+          {#each KIND_OPTIONS as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+        {#if isStatic}
+          <p class="mt-1.5 text-xs text-fg-dim">
+            Static codes encode their content directly — they work offline but scans are not tracked and the content can't be changed after printing.
+          </p>
+        {/if}
       </div>
+
+      {#if kind === 'url'}
+        <div>
+          <label for="target-url" class="field-label">Target URL</label>
+          <input
+            id="target-url"
+            type="url"
+            bind:value={targetUrl}
+            placeholder="https://example.com"
+            class="input"
+          />
+        </div>
+
+        <div class="rounded-md border border-border bg-bg-soft p-4">
+          <button type="button" class="flex w-full items-center justify-between text-left" on:click={() => (utmOpen = !utmOpen)} aria-expanded={utmOpen}>
+            <span>
+              <span class="field-label">UTM tracking parameters <span class="text-fg-dim font-normal">(optional)</span></span>
+              <span class="mt-0.5 block text-xs text-fg-dim">Tag the destination for the receiving site's analytics</span>
+            </span>
+            <span class="text-fg-dim" aria-hidden="true">{utmOpen ? '−' : '+'}</span>
+          </button>
+          {#if utmOpen}
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label for="utm-source" class="field-label">utm_source</label>
+                <input id="utm-source" type="text" bind:value={utm.source} placeholder="poster" class="input font-mono text-xs" />
+              </div>
+              <div>
+                <label for="utm-medium" class="field-label">utm_medium</label>
+                <input id="utm-medium" type="text" bind:value={utm.medium} placeholder="qr" class="input font-mono text-xs" />
+              </div>
+              <div>
+                <label for="utm-campaign" class="field-label">utm_campaign</label>
+                <input id="utm-campaign" type="text" bind:value={utm.campaign} placeholder="spring-launch" class="input font-mono text-xs" />
+              </div>
+              <div>
+                <label for="utm-term" class="field-label">utm_term</label>
+                <input id="utm-term" type="text" bind:value={utm.term} placeholder="" class="input font-mono text-xs" />
+              </div>
+              <div class="sm:col-span-2">
+                <label for="utm-content" class="field-label">utm_content</label>
+                <input id="utm-content" type="text" bind:value={utm.content} placeholder="" class="input font-mono text-xs" />
+              </div>
+              {#if targetUrl.trim()}
+                <p class="sm:col-span-2 break-all rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-fg-muted">{finalTargetUrl}</p>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {:else if kind === 'text'}
+        <div>
+          <label for="payload-text" class="field-label">Text</label>
+          <textarea id="payload-text" bind:value={payload.text.text} rows="4" maxlength="1200" class="input" placeholder="Any text — a note, a code, a message…"></textarea>
+        </div>
+      {:else if kind === 'wifi'}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="wifi-ssid" class="field-label">Network name (SSID)</label>
+            <input id="wifi-ssid" type="text" bind:value={payload.wifi.ssid} class="input" />
+          </div>
+          <div>
+            <label for="wifi-encryption" class="field-label">Security</label>
+            <select id="wifi-encryption" bind:value={payload.wifi.encryption} class="select">
+              <option value="WPA">WPA / WPA2 / WPA3</option>
+              <option value="WEP">WEP</option>
+              <option value="nopass">None (open network)</option>
+            </select>
+          </div>
+          {#if payload.wifi.encryption !== 'nopass'}
+            <div>
+              <label for="wifi-password" class="field-label">Password</label>
+              <input id="wifi-password" type="text" bind:value={payload.wifi.password} class="input font-mono" autocomplete="off" />
+            </div>
+          {/if}
+          <label class="flex items-center gap-2 self-end pb-2 text-sm text-fg">
+            <input id="wifi-hidden" type="checkbox" bind:checked={payload.wifi.hidden} class="checkbox" />
+            <span>Hidden network</span>
+          </label>
+        </div>
+      {:else if kind === 'vcard'}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="vcard-first" class="field-label">First name</label>
+            <input id="vcard-first" type="text" bind:value={payload.vcard.firstName} class="input" />
+          </div>
+          <div>
+            <label for="vcard-last" class="field-label">Last name</label>
+            <input id="vcard-last" type="text" bind:value={payload.vcard.lastName} class="input" />
+          </div>
+          <div>
+            <label for="vcard-org" class="field-label">Organization</label>
+            <input id="vcard-org" type="text" bind:value={payload.vcard.org} class="input" />
+          </div>
+          <div>
+            <label for="vcard-title" class="field-label">Job title</label>
+            <input id="vcard-title" type="text" bind:value={payload.vcard.title} class="input" />
+          </div>
+          <div>
+            <label for="vcard-phone" class="field-label">Phone</label>
+            <input id="vcard-phone" type="tel" bind:value={payload.vcard.phone} class="input" />
+          </div>
+          <div>
+            <label for="vcard-email" class="field-label">Email</label>
+            <input id="vcard-email" type="email" bind:value={payload.vcard.email} class="input" />
+          </div>
+          <div>
+            <label for="vcard-url" class="field-label">Website</label>
+            <input id="vcard-url" type="url" bind:value={payload.vcard.url} class="input" />
+          </div>
+          <div>
+            <label for="vcard-address" class="field-label">Address</label>
+            <input id="vcard-address" type="text" bind:value={payload.vcard.address} class="input" />
+          </div>
+          <div class="sm:col-span-2">
+            <label for="vcard-note" class="field-label">Note</label>
+            <input id="vcard-note" type="text" bind:value={payload.vcard.note} class="input" />
+          </div>
+        </div>
+      {:else if kind === 'event'}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="sm:col-span-2">
+            <label for="event-title" class="field-label">Event title</label>
+            <input id="event-title" type="text" bind:value={payload.event.title} class="input" />
+          </div>
+          <div class="sm:col-span-2">
+            <label for="event-location" class="field-label">Location</label>
+            <input id="event-location" type="text" bind:value={payload.event.location} class="input" />
+          </div>
+          <div>
+            <label for="event-start" class="field-label">Start</label>
+            <input id="event-start" type={payload.event.allDay ? 'date' : 'datetime-local'} bind:value={payload.event.start} class="input" />
+          </div>
+          <div>
+            <label for="event-end" class="field-label">End <span class="text-fg-dim font-normal">(optional)</span></label>
+            <input id="event-end" type={payload.event.allDay ? 'date' : 'datetime-local'} bind:value={payload.event.end} class="input" />
+          </div>
+          <label class="flex items-center gap-2 text-sm text-fg sm:col-span-2">
+            <input id="event-allday" type="checkbox" bind:checked={payload.event.allDay} class="checkbox" />
+            <span>All-day event</span>
+          </label>
+          <div class="sm:col-span-2">
+            <label for="event-desc" class="field-label">Description <span class="text-fg-dim font-normal">(optional)</span></label>
+            <textarea id="event-desc" bind:value={payload.event.description} rows="2" class="input"></textarea>
+          </div>
+        </div>
+      {:else if kind === 'email'}
+        <div class="grid gap-4">
+          <div>
+            <label for="email-to" class="field-label">Email address</label>
+            <input id="email-to" type="email" bind:value={payload.email.to} class="input" />
+          </div>
+          <div>
+            <label for="email-subject" class="field-label">Subject <span class="text-fg-dim font-normal">(optional)</span></label>
+            <input id="email-subject" type="text" bind:value={payload.email.subject} class="input" />
+          </div>
+          <div>
+            <label for="email-body" class="field-label">Message <span class="text-fg-dim font-normal">(optional)</span></label>
+            <textarea id="email-body" bind:value={payload.email.body} rows="3" class="input"></textarea>
+          </div>
+        </div>
+      {:else if kind === 'sms'}
+        <div class="grid gap-4">
+          <div>
+            <label for="sms-phone" class="field-label">Phone number</label>
+            <input id="sms-phone" type="tel" bind:value={payload.sms.phone} class="input" placeholder="+47 123 45 678" />
+          </div>
+          <div>
+            <label for="sms-message" class="field-label">Message <span class="text-fg-dim font-normal">(optional)</span></label>
+            <textarea id="sms-message" bind:value={payload.sms.message} rows="3" class="input"></textarea>
+          </div>
+        </div>
+      {:else if kind === 'geo'}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="geo-lat" class="field-label">Latitude</label>
+            <input id="geo-lat" type="number" step="any" min="-90" max="90" bind:value={payload.geo.lat} class="input" />
+          </div>
+          <div>
+            <label for="geo-lng" class="field-label">Longitude</label>
+            <input id="geo-lng" type="number" step="any" min="-180" max="180" bind:value={payload.geo.lng} class="input" />
+          </div>
+        </div>
+      {/if}
 
       {#if featureFlags.customSlugsEnabled && (!featureFlags.customSlugsAdminOnly || user?.isAdmin)}
         <div>
@@ -529,6 +874,7 @@
         <select id="center-type" bind:value={centerType} class="select">
           <option value="none">None</option>
           <option value="text">Text</option>
+          <option value="image">Image (logo)</option>
         </select>
       </div>
 
@@ -544,18 +890,34 @@
             class="input font-mono"
           />
         </div>
+      {:else if centerType === 'image'}
+        <div>
+          <label for="center-image" class="field-label">Logo image URL</label>
+          <input
+            id="center-image"
+            type="url"
+            bind:value={centerImageUrl}
+            placeholder="https://example.com/logo.png"
+            class="input"
+          />
+          <p class="mt-1.5 text-xs text-fg-dim">
+            Fetched server-side, embedded into the code, and capped at 1 MB. Private/internal addresses are rejected.
+          </p>
+        </div>
       {/if}
 
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label for="expires-at" class="field-label">Expires at <span class="text-fg-dim font-normal">(optional)</span></label>
-          <input id="expires-at" type="datetime-local" bind:value={expiresAt} min={minExpiresAt} class="input" />
+      {#if kind === 'url'}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="expires-at" class="field-label">Expires at <span class="text-fg-dim font-normal">(optional)</span></label>
+            <input id="expires-at" type="datetime-local" bind:value={expiresAt} min={minExpiresAt} class="input" />
+          </div>
+          <div>
+            <label for="qr-password" class="field-label">Password <span class="text-fg-dim font-normal">(optional)</span></label>
+            <input id="qr-password" type="password" bind:value={password} class="input" />
+          </div>
         </div>
-        <div>
-          <label for="qr-password" class="field-label">Password <span class="text-fg-dim font-normal">(optional)</span></label>
-          <input id="qr-password" type="password" bind:value={password} class="input" />
-        </div>
-      </div>
+      {/if}
 
       {#if termsVersion}
         <label class="flex items-start gap-2.5 text-sm text-fg">
@@ -583,8 +945,9 @@
 
       <button
         type="submit"
-        disabled={loading || !targetUrl || needsTerms}
+        disabled={loading || !hasInput || needsTerms}
         class="btn-primary btn-lg w-full"
+        title="⌘/Ctrl + Enter"
       >
         {#if loading}
           <svg class="animate-spin" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.55" stroke-linecap="round"/></svg>
@@ -593,6 +956,8 @@
           Generate QR code
         {/if}
       </button>
+
+      <button type="button" class="btn-ghost btn-sm mx-auto" on:click={clearForm}>Clear form</button>
     </form>
   </div>
 
@@ -609,7 +974,7 @@
       {/if}
     </div>
     {#if previewUrl}
-      <QRPreview dataUrl={previewUrl} shortUrl={shortUrl} {svg} />
+      <QRPreview dataUrl={previewUrl} shortUrl={shortUrl} {svg} shortCode={generatedCode} {isStatic} />
       {#if shortUrl && !isAuthed}
         <p class="alert alert-info mt-4 text-xs" role="status">
           This code isn't tied to an account — sign in first and codes you generate stay manageable in your dashboard.
@@ -623,13 +988,13 @@
               <path d="M3 3h7v7H3V3zm2 2v3h3V5H5zm9-2h7v7h-7V3zm2 2v3h3V5h-3zM3 14h7v7H3v-7zm2 2v3h3v-3H5zm9-2h2v2h-2v-2zm4 0h3v2h-2v1h-1v-3zm-4 4h2v3h-2v-3zm4 1h3v2h-3v-2zm-2-1h2v2h-2v-2z"/>
             </svg>
           </div>
-          {#if targetUrl && needsTerms}
+          {#if hasInput && needsTerms}
             <p class="mt-3 text-sm font-medium text-fg">Almost there</p>
             <p class="mt-1 text-xs text-fg-dim">Accept the Terms of Use below to see the live preview.</p>
             <button type="button" class="link mt-2 text-xs" on:click={focusTerms}>Take me to it</button>
           {:else}
             <p class="mt-3 text-sm font-medium text-fg">Your QR will appear here</p>
-            <p class="mt-1 text-xs text-fg-dim">Type a URL — the preview updates as you edit.</p>
+            <p class="mt-1 text-xs text-fg-dim">{isStatic ? 'Fill in the content — the preview updates as you edit.' : 'Type a URL — the preview updates as you edit.'}</p>
           {/if}
         </div>
       </div>

@@ -37,7 +37,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ['scripts/**'],
+    files: ['scripts/**', 'browser-regression.mjs'],
     languageOptions: { globals: { ...globals.node } }
   }
 );

@@ -5,6 +5,7 @@ import { runMigrations } from '$lib/db/schema';
 import { getNumberSetting, initDefaultSettings } from '$lib/server/settings';
 import { buildLimiterKey, checkRateLimit } from '$lib/server/rate-limit';
 import { runCleanup } from '$lib/server/cleanup';
+import { maybeSendWeeklyDigests } from '$lib/server/digest';
 
 // Run migrations and init settings on startup
 runMigrations();
@@ -13,9 +14,17 @@ initDefaultSettings();
 // Housekeeping at boot and daily thereafter. Skipped under vitest (modules
 // are imported by tests) and unref'd so it never holds the process open.
 if (!process.env.VITEST) {
-  runCleanup();
+  const housekeeping = () => {
+    runCleanup();
+    // No-op unless ENABLE_WEEKLY_DIGEST is on; a mail failure must never
+    // break the cleanup sweep.
+    void maybeSendWeeklyDigests().catch((err) => {
+      console.error('[digest] weekly run failed:', err);
+    });
+  };
+  housekeeping();
   const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
-  const cleanupTimer = setInterval(runCleanup, CLEANUP_INTERVAL_MS);
+  const cleanupTimer = setInterval(housekeeping, CLEANUP_INTERVAL_MS);
   cleanupTimer.unref();
 }
 

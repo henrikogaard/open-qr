@@ -4,6 +4,85 @@ All notable changes to Open-QR will go here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [semver](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-09-29
+
+### Added
+- **Static QR content types**: Wi-Fi, vCard contact, calendar event, plain
+  text, email, SMS, and geo location codes with dedicated form fields
+  (generator + edit page), payload validation/caps, and best-effort decode
+  so API-created payloads pre-fill the edit form. Static codes encode their
+  content directly — `/go/<code>` shows the payload for anyone typing the
+  short URL by hand instead of redirecting.
+- **Alternative targets (scheduling & A/B)**: dynamic QR codes can carry
+  variant destinations — weight `0` makes a scheduled override that wins
+  during its time window (e.g. live page during an event), weight `> 0`
+  joins a proportional A/B split. Scans are attributed per variant on the
+  stats page. Managed from the edit page; `PATCH /api/v1/qr/:code` accepts
+  a `variants` array (replaced wholesale, every target URL runs the full
+  safety pipeline).
+- **Scan webhooks**: per-user endpoints receiving HMAC-SHA256-signed JSON
+  scan events (`X-OpenQR-Signature`), fire-and-forget with per-hook delivery
+  status on the dashboard. SSRF-guarded at registration *and* delivery
+  (`GET/POST /api/v1/webhooks`, `PATCH/DELETE /api/v1/webhooks/:id`).
+- **Weekly scan digest email** (opt-in per user, gated by admin
+  `ENABLE_WEEKLY_DIGEST`): total scans plus top codes for the week, sent
+  from the daily housekeeping run; toggle in the dashboard.
+- **UTM parameter builder** in the generator and edit form — tags the
+  destination URL for the receiving site's analytics with a live preview of
+  the final URL.
+- **Analytics depth**: approximate unique scans (`COUNT(DISTINCT ip_hash)`),
+  date-range presets with hourly granularity on per-QR stats, and per-day
+  campaign comparison sparklines on the dashboard
+  (`GET /api/v1/campaigns/stats?days=`).
+- **Print-quality PNG export**: browser-side SVG rasterization at 400/800/
+  1200/2000 px with sensible download filenames (`<short-code>-<size>px.png`).
+- **Logo center images in the UI**: the previously API-only `centerType:
+  "image"` styling is now exposed in the generator and edit page.
+- `DEFAULT_TEMPLATE` and `DEFAULT_ERROR_CORRECTION` admin settings are now
+  actually applied as generator defaults (they were seeded but never read).
+- **Dashboard overview**: headline tiles (codes, active/protected counts,
+  scans per 7/30 days and all time) plus a recent-scan activity feed with
+  timezone-stable relative times, served from a single aggregate query.
+- **First-run checklist** on the dashboard (create → test-scan → stats →
+  protect a code) with dismiss-to-literal storage; disappears on its own
+  once every step is done.
+- **Dashboard scale tools**: sort by newest/oldest/scans/A–Z, a compact
+  table view alongside the card grid, and load-more pagination.
+- **Print sheet** per code (`/dashboard/qr/:code/print`): exact-size
+  (20–50 mm) print-ready QR with optional caption, driven by a new
+  `?format=svg` mode on the image endpoint.
+- **Stats legibility**: hover tooltips on the scan series (replacing
+  native `title` attributes) and proportion bars behind the country,
+  device, and variant breakdown rows.
+- **Variant split bar** in the editor — stacked preview of A/B weights
+  including the main-URL fallback share, updating live as weights change.
+- **Generator conveniences**: the form persists as a browser draft
+  (refresh-safe, passwords and one-shot fields excluded, "Clear form"
+  button) and submits with ⌘/Ctrl+Enter.
+- **Edit-page test link**: "Open destination" (dynamic) or "View /go page"
+  (static) next to the save controls.
+- Admin panel shows a loading state instead of a blank flash while its
+  client-side fetches resolve.
+- SVG favicon (the app previously shipped none — every page load 404'd on
+  `/favicon.ico`).
+
+### Changed
+- The QR password gate submits as a POST form action and plants a
+  path-scoped, HMAC-signed 10-minute cookie — passwords no longer ride in
+  the query string (browser history / proxy logs).
+- `GET /api/v1/qr/:code/stats` accepts `from`, `to`, `granularity=day|hour`
+  and returns `series` (ascending, with per-bucket uniques), `byVariant`,
+  and `uniqueScans`; `dailyScans`/`byCountry`/`byDevice` are superseded by
+  the range-aware shapes.
+- Dev-mode (no mail provider) OTP logging now goes through the generic mail
+  console path: `[DEV MODE] email to <addr> — <subject>\n<body>`.
+
+### Upgrade notes
+- Run `npm run db:migrate` (migration `008` adds `qr_codes.kind`, the
+  `qr_variants` + `webhooks` tables, `scan_logs.variant_id`, and the digest
+  columns on `users`). `db:init` remains idempotent and seeds
+  `ENABLE_WEEKLY_DIGEST`.
+
 ## [1.4.0] — 2026-09-22
 
 ### Added

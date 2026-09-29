@@ -18,9 +18,21 @@ export const load: LayoutServerLoad = async ({ locals }) => {
   const plausibleEnabled = getBooleanSetting('ENABLE_PLAUSIBLE', false);
   const plausibleDomain = getSetting('PLAUSIBLE_DOMAIN', '').trim();
 
+  // Admin-configurable generator defaults (DEFAULT_TEMPLATE /
+  // DEFAULT_ERROR_CORRECTION). Sanitized here so a bad admin value can never
+  // reach the UI.
+  const templates = ['default', 'minimal', 'colorful', 'rounded', 'dark'];
+  const ecLevels = ['L', 'M', 'Q', 'H'];
+  const defaultTemplate = getSetting('DEFAULT_TEMPLATE', 'default');
+  const defaultEc = getSetting('DEFAULT_ERROR_CORRECTION', 'M').toUpperCase();
+
   return {
     user,
     termsVersion,
+    defaults: {
+      template: templates.includes(defaultTemplate) ? defaultTemplate : 'default',
+      errorCorrection: ecLevels.includes(defaultEc) ? defaultEc : 'M'
+    },
     featureFlags: {
       customSlugsEnabled: getBooleanSetting('ENABLE_CUSTOM_SLUGS', false),
       customSlugsAdminOnly: getBooleanSetting('CUSTOM_SLUGS_ADMIN_ONLY', true),

@@ -43,10 +43,14 @@
       </div>
       <p class="mt-1 font-mono text-xs text-fg-dim">/go/{qr.short_code}</p>
 
+      {#if qr.kind && qr.kind !== 'url'}
+        <p class="mt-1.5"><span class="badge badge-neutral">Static · {qr.kind}</span></p>
+      {/if}
+
       <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
         <div>
           <dt class="text-fg-dim">Scans</dt>
-          <dd class="mt-0.5 font-mono text-sm tabular text-fg">{qr.scan_count}</dd>
+          <dd class="mt-0.5 font-mono text-sm tabular text-fg">{qr.kind && qr.kind !== 'url' ? '—' : qr.scan_count}</dd>
         </div>
         <div>
           <dt class="text-fg-dim">Created</dt>

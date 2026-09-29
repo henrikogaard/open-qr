@@ -66,6 +66,7 @@ export function initDefaultSettings(): void {
     'ENABLE_CUSTOM_SLUGS': 'false',
     'CUSTOM_SLUGS_ADMIN_ONLY': 'true',
     'ENABLE_DESTINATION_INTERSTITIAL': 'false',
+    'ENABLE_WEEKLY_DIGEST': 'false',
     'RATE_LIMIT_PER_MINUTE': '60',
     'MAX_QR_PER_USER': '0',
     'ENABLE_SIGNUP_CAPTCHA': 'true',

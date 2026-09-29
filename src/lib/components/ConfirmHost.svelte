@@ -4,10 +4,12 @@
   import { confirmState, resolveConfirm } from '$lib/stores/confirm';
 
   /** Focus cancel when the dialog opens — the safer default for destructive actions. */
+  /** @param {HTMLElement} node */
   function focusOnOpen(node) {
     node.focus();
   }
 
+  /** @param {boolean} enabled */
   function lockScroll(enabled) {
     if (!browser) return;
     document.body.style.overflow = enabled ? 'hidden' : '';
@@ -22,8 +24,6 @@
 
 {#if $confirmState}
   <div class="fixed inset-0 z-[60] grid place-items-center p-4">
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="absolute inset-0 bg-black/60" aria-hidden="true" on:click={() => resolveConfirm(false)}></div>
 
     <div
