@@ -44,7 +44,7 @@
           <ul class="space-y-2 text-fg-muted">
             <li><a href="/terms" class="link">Terms of Use</a></li>
             <li>MIT License</li>
-            <li>No trackers</li>
+            <li>Optional public-page analytics. <a href="/terms" class="hover:text-fg">Privacy details</a></li>
             <li>No cookies (except auth)</li>
           </ul>
         </div>

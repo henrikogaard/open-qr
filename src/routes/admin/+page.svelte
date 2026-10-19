@@ -456,8 +456,8 @@
       <label class="flex items-start gap-3 text-sm text-fg">
         <input type="checkbox" checked={settings.ENABLE_PLAUSIBLE === 'true'} on:change={(e) => toggleSetting('ENABLE_PLAUSIBLE', e.target.checked)} class="checkbox mt-0.5" />
         <span>
-          <span class="block font-medium">Enable Plausible script</span>
-          <span class="mt-1 block text-xs text-fg-dim">Adds the Plausible browser script to public and app pages. Update your privacy notice before enabling on production.</span>
+          <span class="block font-medium">Enable public-page analytics</span>
+          <span class="mt-1 block text-xs text-fg-dim">Counts signed-out visits to home and terms only, without loading a tracking script. The script URL determines the collector origin. Update your privacy notice before enabling on production.</span>
         </span>
       </label>
       <div class="grid gap-4 md:grid-cols-2">
@@ -523,7 +523,7 @@
         <div class="space-y-3 text-sm text-fg-muted">
           <p>Open-QR stores scan timestamps, coarse country, device class, and hashes of IP/User-Agent values. Raw identifiers are not persisted.</p>
           {#if settings.ENABLE_PLAUSIBLE === 'true'}
-            <p>Plausible is enabled. Your privacy notice should disclose the script URL, configured domain, and whether Plausible is self-hosted or hosted by Plausible Insights.</p>
+            <p>Public-page analytics is enabled. Your privacy notice should disclose the collector origin, configured domain, retention and whether Plausible is self-hosted or hosted by Plausible Insights.</p>
           {/if}
           {#if settings.ENABLE_THREAT_INTEL === 'true'}
             <p>External URL reputation checks are enabled. Your privacy notice should disclose that submitted destination URLs may be sent to enabled reputation providers for abuse prevention.</p>

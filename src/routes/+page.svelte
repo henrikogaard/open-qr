@@ -208,10 +208,12 @@
           Privacy by default, not by promise.
         </h2>
         <p class="mt-4 text-fg-muted">
-          Open-QR is engineered so there is nothing for us to leak — because there is no us.
-          You run it. Raw identifiers are never persisted; sessions are HTTP-only and scoped
-          to the auth path; third-party scripts are absent unless an operator explicitly
-          enables the optional Plausible integration.
+          You run Open-QR on your own infrastructure. Operators can enable Plausible
+          to count signed-out visits to this page and the terms page, without analytics
+          cookies. Login, dashboard and QR redirect pages are excluded. URL parameters,
+          QR contents and account data are not sent. The collector receives your IP address
+          and browser type; Do Not Track and Global Privacy Control are respected.
+          <a href="/terms" class="underline">Read the privacy details</a>.
         </p>
         <p class="mt-4 text-fg-muted">
           The full source is on GitHub under the MIT license. Audit it, fork it, deploy it.
