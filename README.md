@@ -225,10 +225,13 @@ outages is preferable for your instance.
 
 ### Privacy And Processor Guidance
 
-By default, Open-QR has no third-party tracking script. If you enable Plausible,
-the layout injects the configured script URL with the configured `data-domain`.
-That is intentionally visible in `/admin → Privacy`, along with guidance for
-your privacy notice.
+Open-QR does not load a remote tracking script. If you enable Plausible,
+signed-out visits to `/` and `/terms` on the exact configured HTTPS hostname
+send a minimal pageview to the configured collector origin's `/api/event`.
+No query, fragment, referrer, QR contents or account data is included.
+DNT and GPC suppress requests. The collector still processes connection IP
+and browser User-Agent metadata. Document its hosting and retention in your
+privacy notice. Existing settings are preserved; no credential is required.
 
 If you enable external URL reputation providers, submitted destination URLs may
 leave your instance for abuse-prevention checks. Tell users which providers are
@@ -426,9 +429,9 @@ First-time defaults are inserted by `initDefaultSettings()` on startup.
 | `PHISHTANK_APP_KEY` | empty | Optional PhishTank application key. |
 | `ENABLE_SPAMHAUS_DBL` | `false` | Check hostnames against Spamhaus DBL using DNS lookups. |
 | `SPAMHAUS_DBL_ZONE` | `dbl.spamhaus.org` | Spamhaus DBL DNS zone. Change only if your Spamhaus plan requires a custom zone. |
-| `ENABLE_PLAUSIBLE` | `false` | Inject the Plausible Analytics browser script when a domain is also configured. |
-| `PLAUSIBLE_DOMAIN` | empty | Domain sent in the Plausible `data-domain` attribute. |
-| `PLAUSIBLE_SCRIPT_SRC` | `https://plausible.io/js/script.js` | Plausible script URL. Change for self-hosted Plausible. |
+| `ENABLE_PLAUSIBLE` | `false` | Count signed-out visits to `/` and `/terms` only. Login, app, status, reports and QR routes are excluded. |
+| `PLAUSIBLE_DOMAIN` | empty | Exact HTTPS hostname eligible for public pageviews and the Plausible site ID. Other hosts fail closed. |
+| `PLAUSIBLE_SCRIPT_SRC` | `https://plausible.io/js/script.js` | Existing configuration retained: its HTTPS origin determines `/api/event`. No remote tracking script is loaded. |
 | `ENABLE_CUSTOM_SLUGS` | `false` | Allow user-supplied short codes. |
 | `CUSTOM_SLUGS_ADMIN_ONLY` | `true` | Restrict custom slug creation to admins. Recommended for public instances. |
 | `ENABLE_DESTINATION_INTERSTITIAL` | `false` | Show an intermediate destination confirmation page before redirecting scans. |
@@ -1288,7 +1291,7 @@ Open-QR is designed with privacy as a core principle:
   storage
 - **No fingerprinting**: No browser fingerprinting or unique visitor tracking
 - **No third-party services by default**: No Google Analytics and no external trackers unless the operator enables an optional integration
-- **Optional Plausible**: Operators can enable Plausible in the admin panel; doing so adds a third-party/self-hosted analytics script and should be reflected in the operator's privacy notice
+- **Optional Plausible**: Operators can enable signed-out home/terms pageviews. The local client sends only canonical public paths, without query, fragment, referrer or account/QR data. DNT and GPC suppress requests. The collector receives normal connection IP and User-Agent metadata. Document the collector and retention before activation. No remote script or persistent history listener is installed; signed-in and non-allowlisted routes never send events.
 - **Minimal data collection**: Only scan timestamps and rough country (optional)
 - **No cookies for tracking**: Only authentication session cookies
 - **Self-hosted**: Your data stays on your server
