@@ -9,7 +9,7 @@ export function publicPageview(state: State) {
   if (state.url.protocol !== 'https:' || state.url.hostname !== state.domain) return null;
   if (!['/', '/terms'].includes(state.url.pathname)) return null;
   try {
-    const collector = new URL(state.scriptSrc);
+    const collector = new URL(state.scriptSrc, state.url.origin);
     if (collector.protocol !== 'https:' || collector.username || collector.password) return null;
     return {
       endpoint: collector.origin + '/api/event',

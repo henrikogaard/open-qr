@@ -7,11 +7,15 @@ describe('public analytics boundary', () => {
     expect(publicPageview(state)).toEqual({ endpoint: 'https://analytics.ogard.cloud/api/event', body: { name: 'pageview', domain: 'openqr.xyz', url: 'https://openqr.xyz/', referrer: '' } });
     expect(publicPageview({ ...state, url: new URL('https://openqr.xyz/terms?email=private') })?.body.url).toBe('https://openqr.xyz/terms');
   });
+  it('preserves relative and protocol-relative collector configuration', () => {
+    expect(publicPageview({ ...state, scriptSrc: '/js/script.js' })?.endpoint).toBe('https://openqr.xyz/api/event');
+    expect(publicPageview({ ...state, scriptSrc: '//analytics.ogard.cloud/js/script.js' })?.endpoint).toBe('https://analytics.ogard.cloud/api/event');
+  });
   it('excludes authenticated users, private routes and privacy opt-outs', () => {
     for (const path of ['/login', '/verify-otp', '/dashboard', '/go/private', '/report/private', '/status', '/admin', '/terms/private']) {
       expect(publicPageview({ ...state, url: new URL('https://openqr.xyz' + path) })).toBeNull();
     }
-    for (const extra of [{ authenticated: true }, { enabled: false }, { dnt: '1' }, { dnt: 'yes' }, { gpc: true }, { domain: '' }, { scriptSrc: 'invalid' }, { scriptSrc: 'http://analytics.example/js/script.js' }, { url: new URL('https://staging.openqr.xyz/') }]) {
+    for (const extra of [{ authenticated: true }, { enabled: false }, { dnt: '1' }, { dnt: 'yes' }, { gpc: true }, { domain: '' }, { scriptSrc: 'https://[' }, { scriptSrc: 'http://analytics.example/js/script.js' }, { url: new URL('https://staging.openqr.xyz/') }]) {
       expect(publicPageview({ ...state, ...extra })).toBeNull();
     }
   });
