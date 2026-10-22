@@ -1,0 +1,36 @@
+name: Node security image
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build patched runtime
+        run: docker build -t node-security -f Dockerfile  .
+      - name: Check runtime version and Brotli roundtrip
+        run: >-
+          docker run --rm --network none --entrypoint node node-security -e
+          "const assert=require('node:assert/strict'),z=require('node:zlib');assert.equal(process.versions.node,'24.22.1');const input=Buffer.from('security smoke');assert.deepEqual(z.brotliDecompressSync(z.brotliCompressSync(input)),input);console.log(process.versions.node);"
+      - name: Check default application startup with disposable SQLite
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker rm -f openqr-security >/dev/null 2>&1 || true' EXIT
+          docker run -d --name openqr-security --network none --tmpfs /data \
+            -e ORIGIN=http://localhost:3000 node-security
+          for attempt in {1..30}; do
+            if docker exec openqr-security curl --fail --silent http://127.0.0.1:3000/api/v1/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs openqr-security
+          exit 1
