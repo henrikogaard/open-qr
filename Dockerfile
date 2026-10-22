@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:24.22.1-alpine AS build
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY . .
 RUN mkdir -p /tmp/openqr-build-data && DATABASE_URL=/tmp/openqr-build-data/openqr.db npm run build
 RUN npm prune --omit=dev
 
-FROM node:24-alpine
+FROM node:24.22.1-alpine
 
 WORKDIR /app
 
